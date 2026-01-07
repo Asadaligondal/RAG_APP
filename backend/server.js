@@ -3,27 +3,31 @@ const multer = require('multer');
 const fs = require('fs');
 const pdf = require('pdf-parse');
 const { OpenAI } = require('openai');
-const mongoose = require('mongoose');
 require('dotenv').config(); // Make sure your .env file has OPENAI_API_KEY
 
 const app = express();
 const port = 3000;
 
-// --- MongoDB Connection ---
-mongoose.connect('mongodb://localhost:27017/rag-app', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => console.log("Connected to MongoDB")).catch(err =>
-  console.error('MongoDB error', err));
-
-// --- Document Schema (Simplified - no userId needed) ---
-const documentSchema = new mongoose.Schema({
-  chunk: String,
-  embedding: [Number],
-  source: String
+// --- Firebase Connection ---
+const { admin, db, auth } = require('./firebase');
+console.log("Firebase initialized successfully!");
+// --- Firebase Auth: Email/Password Sign-In ---
+app.post('/signin', express.json(), async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).send('Email and password required.');
+  }
+  try {
+    // Firebase Admin SDK does not support sign-in with password directly (for security).
+    // In production, use Firebase Client SDK on frontend for sign-in and send ID token to backend for verification.
+    // Here, we only support verifying ID tokens sent from frontend after sign-in.
+    return res.status(501).send('Sign-in with email/password should be handled on the frontend using Firebase Client SDK. Send ID token to backend for verification.');
+  } catch (error) {
+    res.status(500).send(`Sign-in error: ${error.message}`);
+  }
 });
 
-const Document = mongoose.model('Document', documentSchema); // Changed model name to 'Document' for consistency
+// --- Document Schema will be handled by Firebase ---
 
 // --- Middleware ---
 app.use(express.json()); // For parsing JSON request bodies
@@ -150,12 +154,12 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
 
       const newDocumentsForFile = chunks.map((chunk, index) => ({
         chunk,
-        embedding: embeddings[index], // Use the generated embedding
+        embedding: embeddings[index],
         source: file.originalname
-      })).filter(doc => doc.embedding && doc.embedding.length > 0); // Ensure embedding is not empty
+      })).filter(doc => doc.embedding && doc.embedding.length > 0);
 
       allNewDocuments.push(...newDocumentsForFile);
-      filesProcessed++; // Increment if at least one chunk was processed and embedded
+      filesProcessed++;
       
     } catch (fileProcessingError) {
       console.error(`Error processing file ${file.originalname}: ${fileProcessingError.message}`);
@@ -166,18 +170,20 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
     }
   } // End of for loop
 
+  // Store allNewDocuments in Firestore (Firebase)
   try {
-    if (allNewDocuments.length > 0) {
-        await Document.insertMany(allNewDocuments);
-    }
-    res.send({
-      message: `${filesProcessed} file(s) processed and stored successfully!`,
-      chunksProcessed: allNewDocuments.length,
-      totalStoredChunks: await Document.countDocuments(),
+    const batch = db.batch();
+    allNewDocuments.forEach(doc => {
+      const docRef = db.collection('documents').doc();
+      batch.set(docRef, doc);
     });
-  } catch (dbError) {
-    console.error("MongoDB Insertion Error:", dbError);
-    res.status(500).send(`Error saving chunks to database: ${dbError.message}`);
+    await batch.commit();
+    res.send({
+      message: `${filesProcessed} file(s) processed and stored in Firebase!`,
+      chunksProcessed: allNewDocuments.length,
+    });
+  } catch (firebaseError) {
+    res.status(500).send(`Error saving chunks to Firebase: ${firebaseError.message}`);
   }
 });
 
@@ -189,43 +195,35 @@ app.post('/query', express.json(), async (req, res) => {
   if (!question) {
     return res.status(400).send('No question provided.');
   }
-
   try {
     const questionEmbeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-ada-002', // Consistent model with embedding generation
+      model: 'text-embedding-ada-002',
       input: question
     });
     const questionEmbedding = questionEmbeddingResponse.data[0].embedding;
-
-    // Retrieve all documents (no userId filter)
-    const allDocuments = await Document.find({});
-
+    // Retrieve all documents from Firestore
+    const snapshot = await db.collection('documents').get();
+    const allDocuments = snapshot.docs.map(doc => doc.data());
     const similarities = allDocuments.map(doc => ({
-      ...doc._doc,
+      ...doc,
       similarity: cosineSimilarity(questionEmbedding, doc.embedding)
     }));
-
-    // Filter out irrelevant chunks (e.g., similarity less than a threshold)
     const relevantChunks = similarities
-      .filter(doc => doc.similarity > 0.7) // Add a threshold, e.g., 0.7, adjust as needed
+      .filter(doc => doc.similarity > 0.7)
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 5); // Increased to top 5 chunks for more context
-
+      .slice(0, 5);
     let context = "No relevant information found in documents.";
     if (relevantChunks.length > 0) {
-        context = relevantChunks.map(doc => doc.chunk).join('\n\n'); // Use double newline for better separation
+      context = relevantChunks.map(doc => doc.chunk).join('\n\n');
     }
-
     const prompt = `Based on the following context, answer the question comprehensively. If the information is not available in the context, state that clearly.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer:`;
-
     const chatResponse = await openai.chat.completions.create({
-      model: 'gpt-4o', // Using a more capable model like gpt-4o or gpt-3.5-turbo-0125
+      model: 'gpt-4o',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 500, // Increased max tokens for more detailed answers
-      temperature: 0.2 // Lower temperature for more factual, less creative answers
+      max_tokens: 500,
+      temperature: 0.2
     });
     const answer = chatResponse.choices[0].message.content;
-
     res.send({
       question,
       answer,
@@ -235,9 +233,7 @@ app.post('/query', express.json(), async (req, res) => {
         similarity: doc.similarity
       }))
     });
-
   } catch (error) {
-    console.error("Query Error:", error);
     res.status(500).send(`Error processing query: ${error.message}`);
   }
 });
