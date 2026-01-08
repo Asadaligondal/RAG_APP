@@ -4,7 +4,7 @@ backend/.env
 client/.env
 
 # Firebase credentials
-#backend/rag-based-chatbot-d1810-firebase-adminsdk-fbsvc-7c54b5a16e.json
+backend/rag-based-chatbot-d1810-firebase-adminsdk-fbsvc-7c54b5a16e.json
 **/firebaseServiceAccountKey.json
 
 # Node modules
