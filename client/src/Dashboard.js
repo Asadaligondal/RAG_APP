@@ -1,13 +1,75 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useAuth } from './AuthContext';
+import { db } from './firebase';
+import { 
+  collection, 
+  addDoc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  serverTimestamp,
+  deleteDoc,
+  getDocs
+} from 'firebase/firestore';
 import './Dashboard.css';
 
 function Dashboard() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [files, setFiles] = useState([]);
   const [question, setQuestion] = useState('');
   const [chat, setChat] = useState([]);
   const [uploadStatus, setUploadStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const chatId = 'default-chat'; // Using a default chat ID for simplicity
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+
+    // Set up real-time listener for chat messages
+    const messagesRef = collection(db, 'users', user.uid, 'chats', chatId, 'messages');
+    const q = query(messagesRef, orderBy('createdAt', 'asc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const messages = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Transform Firestore messages to chat format
+      const transformedChat = [];
+      for (let i = 0; i < messages.length; i += 2) {
+        const userMsg = messages[i];
+        const aiMsg = messages[i + 1];
+        
+        if (userMsg && userMsg.sender === 'user') {
+          transformedChat.push({
+            question: userMsg.text,
+            answer: aiMsg?.text || 'Thinking...',
+            loading: !aiMsg
+          });
+        }
+      }
+      
+      setChat(transformedChat);
+    });
+
+    return () => unsubscribe();
+  }, [user, navigate, chatId]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
 
   const handleFileUpload = async (e) => {
     e.preventDefault();
@@ -44,30 +106,59 @@ function Dashboard() {
     const currentQuestion = question;
     setQuestion('');
     setLoading(true);
-    setChat(prevChat => [...prevChat, { question: currentQuestion, answer: 'Thinking...', loading: true }]);
 
     try {
+      // Save user message to Firestore
+      const messagesRef = collection(db, 'users', user.uid, 'chats', chatId, 'messages');
+      await addDoc(messagesRef, {
+        text: currentQuestion,
+        sender: 'user',
+        createdAt: serverTimestamp()
+      });
+
+      // Call backend API for AI response
       const response = await axios.post('/query', { question: currentQuestion }, {
         headers: { 'Content-Type': 'application/json' }
       });
 
-      setChat(prevChat => {
-        const updatedChat = [...prevChat];
-        updatedChat[updatedChat.length - 1].answer = response.data.answer;
-        updatedChat[updatedChat.length - 1].loading = false;
-        return updatedChat;
+      // Save AI response to Firestore
+      await addDoc(messagesRef, {
+        text: response.data.answer,
+        sender: 'ai',
+        createdAt: serverTimestamp()
       });
 
     } catch (error) {
       console.error("Query error:", error);
-      setChat(prevChat => {
-        const updatedChat = [...prevChat];
-        updatedChat[updatedChat.length - 1].answer = `Error: ${error.response?.data || error.message}`;
-        updatedChat[updatedChat.length - 1].loading = false;
-        return updatedChat;
+      
+      // Save error message to Firestore
+      const messagesRef = collection(db, 'users', user.uid, 'chats', chatId, 'messages');
+      await addDoc(messagesRef, {
+        text: `Error: ${error.response?.data || error.message}`,
+        sender: 'ai',
+        createdAt: serverTimestamp()
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (!window.confirm('Are you sure you want to clear the chat history?')) {
+      return;
+    }
+
+    try {
+      const messagesRef = collection(db, 'users', user.uid, 'chats', chatId, 'messages');
+      const snapshot = await getDocs(messagesRef);
+      
+      const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deletePromises);
+      
+      setChat([]);
+    } catch (error) {
+      console.error('Error clearing chat:', error);
+      alert('Failed to clear chat. Please try again.');
     }
   };
 
@@ -75,6 +166,13 @@ function Dashboard() {
     <div className="app-container">
       <aside className="sidebar">
         <h2>RAG Chat</h2>
+        <div className="user-info">
+          <p className="welcome-text">Welcome,</p>
+          <p className="user-email">{user?.email}</p>
+          <button onClick={handleLogout} className="logout-btn">
+            Logout
+          </button>
+        </div>
         <form onSubmit={handleFileUpload} className="upload-form">
           <input
             type="file"
@@ -103,6 +201,13 @@ function Dashboard() {
       <main className="chat-container">
         <div className="chat-header">
           <h3>Ask your documents!</h3>
+          <button 
+            onClick={handleClearChat} 
+            className="clear-chat-btn"
+            title="Clear chat history"
+          >
+            🗑️ Clear Chat
+          </button>
         </div>
         <div className="chat-messages">
           {chat.length === 0 ? (

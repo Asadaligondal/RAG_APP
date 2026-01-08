@@ -1,15 +1,20 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 import './LandingPage.css';
 
 function LandingPage() {
+  const { user } = useAuth();
+
   return (
     <div className="landing-page">
       {/* Navbar */}
       <nav className="navbar">
         <div className="nav-container">
           <h1 className="logo">DocuBrain</h1>
-          <Link to="/dashboard" className="login-btn">Login</Link>
+          <Link to={user ? "/dashboard" : "/login"} className="login-btn">
+            {user ? "Go to Dashboard" : "Login"}
+          </Link>
         </div>
       </nav>
 
@@ -21,7 +26,9 @@ function LandingPage() {
             AI-powered analysis for your contracts, resumes, and reports. 
             Get instant answers from your documents with cutting-edge RAG technology.
           </p>
-          <Link to="/dashboard" className="cta-button">Get Started for Free</Link>
+          <Link to={user ? "/dashboard" : "/signup"} className="cta-button">
+            {user ? "Go to Dashboard" : "Get Started for Free"}
+          </Link>
         </div>
       </section>
 
