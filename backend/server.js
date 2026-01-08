@@ -110,6 +110,11 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
     return res.status(400).send('No files uploaded.');
   }
 
+  const { chatId } = req.body; // Get chatId from request
+  if (!chatId) {
+    return res.status(400).send('chatId is required.');
+  }
+
   const allNewDocuments = []; // Initialize here
   let filesProcessed = 0; // Track successfully processed files
 
@@ -155,7 +160,8 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
       const newDocumentsForFile = chunks.map((chunk, index) => ({
         chunk,
         embedding: embeddings[index],
-        source: file.originalname
+        source: file.originalname,
+        chatId: chatId // Tag each chunk with chatId
       })).filter(doc => doc.embedding && doc.embedding.length > 0);
 
       allNewDocuments.push(...newDocumentsForFile);
@@ -191,9 +197,12 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
 
 // POST endpoint for queries (no authentication needed)
 app.post('/query', express.json(), async (req, res) => {
-  const { question } = req.body;
+  const { question, chatId } = req.body;
   if (!question) {
     return res.status(400).send('No question provided.');
+  }
+  if (!chatId) {
+    return res.status(400).send('chatId is required.');
   }
   try {
     const questionEmbeddingResponse = await openai.embeddings.create({
@@ -201,8 +210,8 @@ app.post('/query', express.json(), async (req, res) => {
       input: question
     });
     const questionEmbedding = questionEmbeddingResponse.data[0].embedding;
-    // Retrieve all documents from Firestore
-    const snapshot = await db.collection('documents').get();
+    // Retrieve only documents from the current chatId
+    const snapshot = await db.collection('documents').where('chatId', '==', chatId).get();
     const allDocuments = snapshot.docs.map(doc => doc.data());
     const similarities = allDocuments.map(doc => ({
       ...doc,
