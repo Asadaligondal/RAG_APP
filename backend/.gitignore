@@ -2,7 +2,7 @@
 node_modules/
 
 # Firebase service account key
-rag-based-chatbot-d1810-firebase-adminsdk-fbsvc-7c54b5a16e.json
+#rag-based-chatbot-d1810-firebase-adminsdk-fbsvc-7c54b5a16e.json
 
 # Environment variables
 .env
