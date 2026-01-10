@@ -4,7 +4,6 @@ import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
 import Sidebar from './Sidebar';
-import { extractImagesAndUpload } from './utils/pdf-extractor';
 import { 
   collection, 
   addDoc, 
@@ -125,35 +124,6 @@ function Dashboard() {
         fileId: newChatId // Link to document vectors
       });
       
-      // ✨ STEP 1: Extract images from PDF(s) and upload to Firebase Storage
-      console.log('=== Starting PDF Image Extraction ===');
-      const allExtractedImages = [];
-      
-      for (const file of files) {
-        if (file.type === 'application/pdf') {
-          setUploadStatus(`Extracting images from ${file.name}...`);
-          try {
-            const images = await extractImagesAndUpload(file, newChatId);
-            allExtractedImages.push(...images);
-            console.log(`✅ Extracted ${images.length} images from ${file.name}`);
-          } catch (extractError) {
-            console.error(`Error extracting images from ${file.name}:`, extractError);
-            // Continue even if extraction fails
-          }
-        }
-      }
-      
-      console.log('=== Image Extraction Complete ===');
-      console.log('📸 Total extracted images:', allExtractedImages.length);
-      console.log('Image URLs:', allExtractedImages.map(img => ({
-        url: img.imageUrl,
-        page: img.pageNumber,
-        path: img.storagePath
-      })));
-      
-      // ✨ STEP 2: Upload PDFs to backend for text processing
-      setUploadStatus('Processing text content...');
-      
       const formData = new FormData();
       files.forEach(file => formData.append('pdf', file));
       formData.append('chatId', newChatId); // Send chatId to backend
@@ -162,12 +132,9 @@ function Dashboard() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       
-      const successMessage = `Uploaded ${files.length} file(s). ${response.data.chunksProcessed} chunks processed and stored.`;
-      const imageMessage = allExtractedImages.length > 0 
-        ? ` 📸 Extracted ${allExtractedImages.length} images.`
-        : '';
-      
-      setUploadStatus(successMessage + imageMessage);
+      setUploadStatus(
+        `Uploaded ${files.length} file(s). ${response.data.chunksProcessed} chunks processed and stored.`
+      );
       setFiles([]);
       setCurrentChatId(newChatId); // Switch to new chat
     } catch (error) {

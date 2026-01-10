@@ -2,21 +2,19 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDvr4pntuSmZIVX5NtoNkhM5dHq-SbzqOU",
-  authDomain: "rag-based-chatbot-d1810.firebaseapp.com",
-  projectId: "rag-based-chatbot-d1810",
-  storageBucket: "rag-based-chatbot-d1810.appspot.com",
-  messagingSenderId: "557020748572",
-  appId: "1:557020748572:web:503c5f67d1e8bcc10778d9",
-  measurementId: "G-B9LVJ0EYCY"
+  apiKey: "AIzaSyB7CTNc1HJvmbkzg4CuMqWEXaETsbWewEA",
+  authDomain: "identity-compass-79f6a.firebaseapp.com",
+  projectId: "identity-compass-79f6a",
+  storageBucket: "identity-compass-79f6a.firebasestorage.app",
+  messagingSenderId: "388774577142",
+  appId: "1:388774577142:web:2100be60b69feb6daefdd7",
+  measurementId: "G-T1Z5KJ7W7P"
 };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app);
 
-export { app, auth, db, storage };
+export { app, auth, db };

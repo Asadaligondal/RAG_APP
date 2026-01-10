@@ -6,7 +6,7 @@ const { OpenAI } = require('openai');
 require('dotenv').config(); // Make sure your .env file has OPENAI_API_KEY
 
 const app = express();
-const port = 3000;
+const port = 5000;
 
 // --- Firebase Connection ---
 const { admin, db, auth } = require('./firebase');

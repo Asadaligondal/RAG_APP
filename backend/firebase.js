@@ -1,5 +1,13 @@
 // Firebase Admin SDK initialization for backend
 const admin = require('firebase-admin');
+require('dotenv').config(); // Load environment variables
+
+// Check if required environment variables are present
+if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL || !process.env.FIREBASE_PRIVATE_KEY) {
+  console.error('ERROR: Missing required Firebase environment variables!');
+  console.error('Please check your .env file has: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY');
+  process.exit(1);
+}
 
 // Use environment variables instead of JSON file
 const serviceAccount = {
