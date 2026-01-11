@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import ThemeToggle from './ThemeToggle';
 import './LandingPage.css';
 
 function LandingPage() {
@@ -8,6 +9,7 @@ function LandingPage() {
 
   return (
     <div className="landing-page">
+      <ThemeToggle />
       {/* Navbar */}
       <nav className="navbar">
         <div className="nav-container">

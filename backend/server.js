@@ -1,8 +1,12 @@
 const express = require('express');
+const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
 const pdf = require('pdf-parse');
 const { OpenAI } = require('openai');
+const axios = require('axios');
+const { createRouteHandler } = require("uploadthing/express");
+const { uploadRouter } = require("./uploadthing");
 require('dotenv').config(); // Make sure your .env file has OPENAI_API_KEY
 
 const app = express();
@@ -30,7 +34,20 @@ app.post('/signin', express.json(), async (req, res) => {
 // --- Document Schema will be handled by Firebase ---
 
 // --- Middleware ---
+app.use(cors()); // Enable CORS for all routes
 app.use(express.json()); // For parsing JSON request bodies
+
+// UploadThing route handler - must be before express.json() processes body
+app.use(
+  "/api/uploadthing",
+  createRouteHandler({
+    router: uploadRouter,
+    config: {
+      token: process.env.UPLOADTHING_TOKEN,
+      isDev: true, // Set to true for development
+    },
+  })
+);
 
 // Initialize OpenAI with API key
 const openai = new OpenAI({
@@ -190,6 +207,99 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
     });
   } catch (firebaseError) {
     res.status(500).send(`Error saving chunks to Firebase: ${firebaseError.message}`);
+  }
+});
+
+// POST endpoint for processing PDFs from UploadThing URLs
+app.post('/upload-from-url', express.json(), async (req, res) => {
+  const { pdfUrl, chatId, fileName } = req.body;
+
+  if (!pdfUrl || !chatId) {
+    return res.status(400).send('pdfUrl and chatId are required.');
+  }
+
+  try {
+    console.log(`Processing PDF from URL: ${pdfUrl}`);
+    
+    // Download PDF from UploadThing URL
+    const response = await axios.get(pdfUrl, { 
+      responseType: 'arraybuffer',
+      timeout: 30000 // 30 second timeout
+    });
+    
+    const pdfBuffer = Buffer.from(response.data);
+    
+    // Extract text from PDF
+    const pdfData = await pdf(pdfBuffer);
+    const extractedText = pdfData.text;
+
+    if (!extractedText || extractedText.trim().length === 0) {
+      return res.status(400).send('No text could be extracted from the PDF. It might be image-only or empty.');
+    }
+
+    // Split text into chunks
+    const chunks = splitText(extractedText, 500, 100);
+
+    if (chunks.length === 0) {
+      return res.status(400).send('No text chunks created from PDF.');
+    }
+
+    // Generate embeddings for chunks
+    const embeddings = await Promise.all(
+      chunks.map(async (chunk) => {
+        try {
+          const embeddingResponse = await openai.embeddings.create({
+            model: 'text-embedding-ada-002',
+            input: chunk
+          });
+          return embeddingResponse.data[0].embedding;
+        } catch (embeddingError) {
+          console.error(`Error generating embedding: ${embeddingError.message}`);
+          return null;
+        }
+      })
+    );
+
+    // Filter out failed embeddings
+    const validEmbeddings = embeddings.filter(e => e !== null);
+
+    if (validEmbeddings.length === 0) {
+      return res.status(500).send('Failed to generate embeddings for any chunks.');
+    }
+
+    // Create documents with embeddings
+    const newDocuments = chunks.map((chunk, index) => ({
+      source: fileName || 'uploaded-document.pdf',
+      chunk: chunk,
+      embedding: validEmbeddings[index] || [],
+      chatId: chatId,
+      pdfUrl: pdfUrl,
+      createdAt: new Date().toISOString()
+    })).filter(doc => doc.embedding.length > 0);
+
+    // Store in Firestore
+    const batch = db.batch();
+    newDocuments.forEach(doc => {
+      const docRef = db.collection('documents').doc();
+      batch.set(docRef, doc);
+    });
+    await batch.commit();
+
+    console.log(`Processed ${newDocuments.length} chunks for chatId: ${chatId}`);
+
+    res.json({
+      message: 'PDF processed successfully',
+      chunksProcessed: newDocuments.length,
+      pdfUrl: pdfUrl,
+      fileName: fileName
+    });
+
+  } catch (error) {
+    console.error('Error processing PDF from URL:', error);
+    res.status(500).json({ 
+      error: 'Failed to process PDF',
+      details: error.message 
+    });
   }
 });
 

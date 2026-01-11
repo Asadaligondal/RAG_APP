@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import ThemeToggle from './ThemeToggle';
 import './Auth.css';
 
 function Signup() {
@@ -53,6 +54,7 @@ function Signup() {
 
   return (
     <div className="auth-page">
+      <ThemeToggle />
       <div className="auth-container">
         <div className="auth-header">
           <h1 className="auth-logo">DocuBrain</h1>

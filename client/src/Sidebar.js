@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import './Sidebar.css';
 
-function Sidebar({ currentChatId, onSelectChat, onNewChat }) {
+function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggleCollapse }) {
   const { user, logout } = useAuth();
   const [chats, setChats] = useState([]);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -66,11 +66,15 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat }) {
       </button>
 
       {/* Sidebar */}
-      <aside className={`sidebar-nav ${isMobileOpen ? 'mobile-open' : ''}`}>
+      <aside className={`sidebar-nav ${isMobileOpen ? 'mobile-open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
+        <button className="collapse-btn" onClick={onToggleCollapse} title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          {isCollapsed ? '▶' : '◀'}
+        </button>
+        
         <div className="sidebar-header">
-          <h2 className="sidebar-logo">DocuBrain</h2>
+          <h2 className="sidebar-logo">{isCollapsed ? 'DB' : 'DocuBrain'}</h2>
           <button className="new-chat-btn" onClick={onNewChat}>
-            <span className="plus-icon">+</span> New Chat
+            <span className="plus-icon">+</span> {!isCollapsed && 'New Chat'}
           </button>
         </div>
 

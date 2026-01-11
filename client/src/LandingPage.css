@@ -6,8 +6,8 @@
 
 .landing-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  color: white;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
@@ -15,9 +15,8 @@
 
 /* Navbar */
 .navbar {
-  background: rgba(15, 23, 42, 0.8);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -35,17 +34,14 @@
 .logo {
   font-size: 24px;
   font-weight: bold;
-  background: linear-gradient(90deg, #3b82f6, #60a5fa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 
 .login-btn {
   padding: 10px 24px;
-  background: transparent;
-  color: white;
-  border: 2px solid #3b82f6;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: 2px solid var(--accent-primary);
   border-radius: 8px;
   text-decoration: none;
   font-weight: 600;
@@ -53,9 +49,10 @@
 }
 
 .login-btn:hover {
-  background: #3b82f6;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 12px var(--shadow-hover);
 }
 
 /* Hero Section */
@@ -76,15 +73,12 @@
   font-weight: 800;
   line-height: 1.2;
   margin-bottom: 24px;
-  background: linear-gradient(90deg, #ffffff, #60a5fa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
 }
 
 .hero-subtitle {
   font-size: 20px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   line-height: 1.6;
   margin-bottom: 40px;
 }
@@ -92,19 +86,20 @@
 .cta-button {
   display: inline-block;
   padding: 16px 40px;
-  background: linear-gradient(90deg, #3b82f6, #2563eb);
-  color: white;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
   text-decoration: none;
   font-size: 18px;
   font-weight: 600;
   border-radius: 12px;
   transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+  box-shadow: 0 4px 20px var(--shadow-color);
 }
 
 .cta-button:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.6);
+  box-shadow: 0 8px 30px var(--shadow-hover);
+  background: var(--accent-hover);
 }
 
 /* Features Section */
@@ -119,6 +114,7 @@
   font-size: 36px;
   font-weight: 700;
   margin-bottom: 60px;
+  color: var(--text-primary);
 }
 
 .features-grid {
@@ -128,9 +124,8 @@
 }
 
 .feature-card {
-  background: rgba(30, 41, 59, 0.5);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 40px;
   text-align: center;
@@ -139,8 +134,8 @@
 
 .feature-card:hover {
   transform: translateY(-8px);
-  border-color: rgba(59, 130, 246, 0.6);
-  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.3);
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 30px var(--shadow-color);
 }
 
 .feature-icon {
@@ -152,12 +147,12 @@
   font-size: 24px;
   font-weight: 700;
   margin-bottom: 16px;
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .feature-card p {
   font-size: 16px;
-  color: #94a3b8;
+  color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -166,8 +161,8 @@
   text-align: center;
   padding: 40px;
   margin-top: 100px;
-  border-top: 1px solid rgba(59, 130, 246, 0.2);
-  color: #64748b;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-tertiary);
 }
 
 /* Responsive */

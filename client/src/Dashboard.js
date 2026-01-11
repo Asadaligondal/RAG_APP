@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
 import Sidebar from './Sidebar';
+import ThemeToggle from './ThemeToggle';
+import PDFViewer from './components/PDFViewer';
+import { useUploadThing } from './utils/uploadthing';
 import { 
   collection, 
   addDoc, 
@@ -14,7 +17,8 @@ import {
   deleteDoc,
   getDocs,
   doc,
-  setDoc
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 import './Dashboard.css';
 
@@ -59,6 +63,32 @@ function Dashboard() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentChatId, setCurrentChatId] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showPDFViewer, setShowPDFViewer] = useState(false);
+  const [currentPDFUrl, setCurrentPDFUrl] = useState('');
+  const [currentPDFTitle, setCurrentPDFTitle] = useState('');
+  const messagesEndRef = useRef(null);
+
+  // UploadThing hook
+  const { startUpload, isUploading } = useUploadThing("pdfUploader", {
+    onClientUploadComplete: (files) => {
+      console.log("Upload complete:", files);
+    },
+    onUploadError: (error) => {
+      console.error("Upload error:", error);
+      setUploadStatus(`Upload error: ${error.message}`);
+      setLoading(false);
+    },
+  });
+
+  // Auto-scroll to bottom when chat updates
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [chat]);
 
   useEffect(() => {
     if (!user) {
@@ -111,25 +141,40 @@ function Dashboard() {
     }
 
     setLoading(true);
-    setUploadStatus('Uploading and processing...');
+    setUploadStatus('Uploading to UploadThing...');
     
     // Create a new chat with metadata first
     const newChatId = `chat_${Date.now()}`;
     const fileName = files[0].name; // Use first file name as title
     
     try {
+      // Upload files to UploadThing
+      const uploadedFiles = await startUpload(files);
+      
+      if (!uploadedFiles || uploadedFiles.length === 0) {
+        throw new Error('Upload failed - no files returned');
+      }
+
+      const uploadedFile = uploadedFiles[0];
+      const pdfUrl = uploadedFile.url;
+
+      setUploadStatus('Processing PDF...');
+
+      // Create chat document with pdfUrl
       await setDoc(doc(db, 'users', user.uid, 'chats', newChatId), {
         title: fileName,
         createdAt: serverTimestamp(),
-        fileId: newChatId // Link to document vectors
+        fileId: newChatId,
+        pdfUrl: pdfUrl // Store UploadThing URL for preview
       });
-      
-      const formData = new FormData();
-      files.forEach(file => formData.append('pdf', file));
-      formData.append('chatId', newChatId); // Send chatId to backend
 
-      const response = await axios.post('/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      // Send PDF URL to backend for processing
+      const response = await axios.post('/upload-from-url', {
+        pdfUrl: pdfUrl,
+        chatId: newChatId,
+        fileName: fileName
+      }, {
+        headers: { 'Content-Type': 'application/json' }
       });
       
       setUploadStatus(
@@ -223,113 +268,209 @@ function Dashboard() {
     setUploadStatus('');
   };
 
+  const handlePreviewPDF = async () => {
+    if (!currentChatId) {
+      alert('No chat selected');
+      return;
+    }
+
+    try {
+      // Fetch chat metadata to get pdfUrl
+      const chatDoc = await getDoc(doc(db, 'users', user.uid, 'chats', currentChatId));
+      if (chatDoc.exists()) {
+        const chatData = chatDoc.data();
+        if (chatData.pdfUrl) {
+          setCurrentPDFUrl(chatData.pdfUrl);
+          setCurrentPDFTitle(chatData.title || 'PDF Preview');
+          setShowPDFViewer(true);
+        } else {
+          alert('No PDF file associated with this chat');
+        }
+      } else {
+        alert('Chat not found');
+      }
+    } catch (error) {
+      console.error('Error loading PDF:', error);
+      alert('Failed to load PDF preview');
+    }
+  };
+
   return (
     <div className="dashboard-layout">
+      <ThemeToggle />
       <Sidebar 
         currentChatId={currentChatId}
         onSelectChat={handleSelectChat}
         onNewChat={handleNewChat}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
       
       {!currentChatId ? (
-        // Upload Screen
-        <div className="upload-screen">
-          <div className="upload-content">
-            <h1 className="upload-title">Start a New Chat</h1>
-            <p className="upload-subtitle">Upload a PDF document to begin chatting with it</p>
-            
-            <form onSubmit={handleFileUpload} className="upload-form-main">
-              <div className="file-input-wrapper">
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf"
-                  onChange={(e) => setFiles(Array.from(e.target.files))}
-                  disabled={loading}
-                  id="file-input"
-                  className="file-input"
-                />
-                <label htmlFor="file-input" className="file-input-label">
-                  📁 Choose PDF Files
-                </label>
+        // Landing Screen - ChatGPT Style
+        <div className="landing-screen">
+          <div className="landing-content">
+            <div className="landing-center">
+              <div className="logo">ChatPDF</div>
+              <h1 className="landing-title">What can I help with?</h1>
+              
+              <div className="input-section">
+                <div className="input-toolbar">
+                  <button className="toolbar-btn" title="Attach files">
+                    📎 Attach
+                  </button>
+                  <button className="toolbar-btn" title="Search">
+                    🔍 Search
+                  </button>
+                  <button className="toolbar-btn" title="Reason">
+                    💭 Reason
+                  </button>
+                </div>
+                
+                <form onSubmit={handleFileUpload} className="input-wrapper">
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf"
+                    onChange={(e) => setFiles(Array.from(e.target.files))}
+                    disabled={loading}
+                    id="file-input"
+                    className="file-input-hidden"
+                  />
+                  <label htmlFor="file-input" className="input-box">
+                    <span className="input-placeholder">
+                      {files.length > 0 ? `${files.length} file(s) selected - Click Upload` : 'Attach PDF files...'}
+                    </span>
+                  </label>
+                  
+                  {files.length > 0 && (
+                    <button type="submit" disabled={loading} className="send-btn">
+                      {loading ? '⏳' : '⬆️'}
+                    </button>
+                  )}
+                </form>
               </div>
               
-              {files.length > 0 && (
-                <div className="selected-files-main">
-                  <h4>Selected Files:</h4>
-                  <ul>
-                    {files.map((file, index) => (
-                      <li key={index}>{file.name}</li>
-                    ))}
-                  </ul>
+              <div className="suggestion-chips">
+                <div className="chip">
+                  <span className="chip-icon">💡</span> Brainstorm
                 </div>
-              )}
-              
-              <button type="submit" disabled={files.length === 0 || loading} className="upload-btn-main">
-                {loading ? 'Uploading...' : 'Upload & Start Chat'}
-              </button>
-              
-              {uploadStatus && <p className="upload-status-main">{uploadStatus}</p>}
-            </form>
+                <div className="chip">
+                  <span className="chip-icon">⚡</span> Code
+                </div>
+                <div className="chip">
+                  <span className="chip-icon">📝</span> Summarize text
+                </div>
+                <div className="chip">
+                  <span className="chip-icon">💬</span> Get advice
+                </div>
+                <div className="chip">
+                  <span className="chip-icon">➕</span> More
+                </div>
+              </div>
+            </div>
+            
+            {uploadStatus && <div className="status-message">{uploadStatus}</div>}
           </div>
         </div>
       ) : (
         // Chat Screen
         <div className="chat-screen">
-          <div className="chat-header">
-            <h3>Ask your documents!</h3>
-            <button 
-              onClick={handleClearChat} 
-              className="clear-chat-btn"
-              title="Clear chat history"
-            >
-              🗑️ Clear Chat
-            </button>
-          </div>
-          
-          <div className="chat-messages">
+          <div className="chat-messages-container">
             {chat.length === 0 ? (
-              <div className="empty-chat">Start asking questions about your uploaded documents!</div>
+              <div className="empty-chat-state">
+                <div className="empty-icon">💬</div>
+                <h3>How can I help you today?</h3>
+                <p>Upload a document and start asking questions</p>
+              </div>
             ) : (
-              chat.map((entry, index) => (
-                <div key={index} className="message-group">
-                  <div className="message user-message">
-                    <strong>You:</strong> {entry.question}
-                  </div>
-                  <div className={`message ai-message ${entry.loading ? 'loading' : ''}`}>
-                    <strong>AI:</strong> 
-                    {entry.loading ? (
-                      <span className="thinking-indicator">
-                        <span className="dot"></span>
-                        <span className="dot"></span>
-                        <span className="dot"></span>
-                        Thinking...
-                      </span>
-                    ) : (
-                      <>
-                        {entry.answer}
-                        <SourcesSection sources={entry.sources} />
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))
+              <>
+                {chat.map((entry, index) => (
+                  <React.Fragment key={index}>
+                    {/* User Message */}
+                    <div className="message-row user-row">
+                      <div className="message-content">
+                        <div className="avatar user-avatar">
+                          <span>{user?.email?.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div className="message-text">
+                          <div className="message-author">You</div>
+                          <div className="message-body">{entry.question}</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* AI Message */}
+                    <div className="message-row ai-row">
+                      <div className="message-content">
+                        <div className="avatar ai-avatar">
+                          <span>🤖</span>
+                        </div>
+                        <div className="message-text">
+                          <div className="message-author">ChatPDF</div>
+                          {entry.loading ? (
+                            <div className="message-body">
+                              <span className="typing-indicator">
+                                <span className="typing-dot"></span>
+                                <span className="typing-dot"></span>
+                                <span className="typing-dot"></span>
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="message-body">
+                              {entry.answer}
+                              <SourcesSection sources={entry.sources} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                ))}
+                <div ref={messagesEndRef} />
+              </>
             )}
           </div>
           
-          <form onSubmit={handleQuery} className="chat-input">
-            <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder="Ask a question about your documents..."
-              disabled={loading}
-            />
-            <button type="submit" disabled={!question.trim() || loading}>
-              {loading ? 'Sending...' : 'Send'}
-            </button>
-          </form>
+          {currentChatId && (
+            <div className="preview-button-container">
+              <button onClick={handlePreviewPDF} className="preview-pdf-btn">
+                📄 Preview PDF
+              </button>
+            </div>
+          )}
+          
+          <div className="chat-input-container">
+            <form onSubmit={handleQuery} className="chat-input-form">
+              <div className="input-wrapper-chat">
+                <input
+                  type="text"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder="Message ChatPDF..."
+                  disabled={loading}
+                  className="chat-text-input"
+                />
+                <button 
+                  type="submit" 
+                  disabled={!question.trim() || loading}
+                  className="chat-send-button"
+                >
+                  {loading ? '⏳' : '⬆️'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
+      )}
+      
+      {/* PDF Viewer Modal */}
+      {showPDFViewer && (
+        <PDFViewer
+          pdfUrl={currentPDFUrl}
+          title={currentPDFTitle}
+          onClose={() => setShowPDFViewer(false)}
+        />
       )}
     </div>
   );
