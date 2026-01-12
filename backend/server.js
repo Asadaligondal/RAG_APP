@@ -492,3 +492,6 @@ const server = app.listen(port, () => {
 server.timeout = 300000;
 server.keepAliveTimeout = 300000;
 server.headersTimeout = 310000;
+
+// Export for Vercel serverless
+module.exports = app;
