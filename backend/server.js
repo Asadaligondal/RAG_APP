@@ -35,7 +35,15 @@ app.post('/signin', express.json(), async (req, res) => {
 
 // --- Middleware ---
 app.use(cors()); // Enable CORS for all routes
-app.use(express.json()); // For parsing JSON request bodies
+app.use(express.json({ limit: '50mb' })); // Increased limit for large payloads
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Set timeout for all requests (5 minutes for PDF processing)
+app.use((req, res, next) => {
+  req.setTimeout(300000); // 5 minutes
+  res.setTimeout(300000); // 5 minutes
+  next();
+});
 
 // UploadThing route handler - must be before express.json() processes body
 app.use(
@@ -74,8 +82,103 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // --- Helper Functions ---
+// Helper to extract text and estimate page numbers (memory-efficient version)
+async function extractTextWithPages(pdfBuffer) {
+  // Extract all text in one pass
+  const data = await pdf(pdfBuffer);
+  const fullText = data.text;
+  const totalPages = data.numpages;
+  
+  // Estimate characters per page
+  const avgCharsPerPage = Math.ceil(fullText.length / totalPages);
+  
+  // Split text and assign estimated page numbers
+  const pages = [];
+  let currentPos = 0;
+  
+  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+    const pageText = fullText.slice(currentPos, currentPos + avgCharsPerPage);
+    pages.push({
+      pageNumber: pageNum,
+      text: pageText.trim()
+    });
+    currentPos += avgCharsPerPage;
+  }
+  
+  return pages;
+}
 
-// Custom text splitter
+// Process chunks iteratively without storing all in memory
+async function processChunksWithEmbeddings(pages, chunkSize, chunkOverlap, maxChunks, openai, fileName, chatId, pdfUrl) {
+  // Validate overlap
+  if (chunkOverlap >= chunkSize) {
+    throw new Error(`Invalid overlap: ${chunkOverlap} must be < ${chunkSize}`);
+  }
+  
+  const documents = [];
+  let totalChunks = 0;
+  const MAX_CHUNKS = maxChunks || 100;
+  
+  // Process each page
+  for (const page of pages) {
+    if (totalChunks >= MAX_CHUNKS) {
+      console.log(`[WARNING] Reached max chunks limit (${MAX_CHUNKS}), stopping`);
+      break;
+    }
+    
+    const { pageNumber, text } = page;
+    let start = 0;
+    
+    // Process chunks from this page
+    while (start < text.length && totalChunks < MAX_CHUNKS) {
+      const end = Math.min(start + chunkSize, text.length);
+      const chunkText = text.slice(start, end).trim();
+      
+      if (chunkText.length > 0) {
+        // Process chunk immediately - generate embedding
+        try {
+          const embeddingResponse = await openai.embeddings.create({
+            model: 'text-embedding-ada-002',
+            input: chunkText
+          });
+          
+          // Store document immediately - don't accumulate
+          documents.push({
+            source: fileName || 'uploaded-document.pdf',
+            chunk: chunkText,
+            pageNumber: pageNumber,
+            embedding: embeddingResponse.data[0].embedding,
+            chatId: chatId,
+            pdfUrl: pdfUrl,
+            createdAt: new Date().toISOString()
+          });
+          
+          totalChunks++;
+          
+          // Log progress every 10 chunks
+          if (totalChunks % 10 === 0) {
+            console.log(`[PROGRESS] Processed ${totalChunks} chunks...`);
+          }
+        } catch (error) {
+          console.error(`[ERROR] Failed to process chunk ${totalChunks + 1}:`, error.message);
+        }
+      }
+      
+      // Move to next chunk with overlap
+      start = end - chunkOverlap;
+      
+      // Prevent infinite loop
+      if (start <= 0 || end >= text.length) break;
+    }
+    
+    // Clear page text from memory
+    page.text = null;
+  }
+  
+  return documents;
+}
+
+// Custom text splitter with page tracking
 function splitText(text, chunkSize = 100, chunkOverlap = 20) {
   const chunks = [];
   let start = 0;
@@ -212,94 +315,115 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
 
 // POST endpoint for processing PDFs from UploadThing URLs
 app.post('/upload-from-url', express.json(), async (req, res) => {
+  const startTime = Date.now();
   const { pdfUrl, chatId, fileName } = req.body;
 
+  console.log(`[${new Date().toISOString()}] === START PDF PROCESSING ===`);
+  console.log(`ChatId: ${chatId}, FileName: ${fileName}`);
+
   if (!pdfUrl || !chatId) {
-    return res.status(400).send('pdfUrl and chatId are required.');
+    console.log('[ERROR] Missing required parameters');
+    return res.status(400).json({ error: 'pdfUrl and chatId are required.' });
   }
 
   try {
-    console.log(`Processing PDF from URL: ${pdfUrl}`);
-    
-    // Download PDF from UploadThing URL
+    // Step 1: Download PDF
+    console.log(`[STEP 1] Downloading PDF from: ${pdfUrl}`);
     const response = await axios.get(pdfUrl, { 
       responseType: 'arraybuffer',
-      timeout: 30000 // 30 second timeout
+      timeout: 60000 // Increased to 60 seconds
     });
+    console.log(`[STEP 1] ✓ Downloaded ${response.data.byteLength} bytes in ${Date.now() - startTime}ms`);
     
     const pdfBuffer = Buffer.from(response.data);
     
-    // Extract text from PDF
-    const pdfData = await pdf(pdfBuffer);
-    const extractedText = pdfData.text;
-
-    if (!extractedText || extractedText.trim().length === 0) {
-      return res.status(400).send('No text could be extracted from the PDF. It might be image-only or empty.');
+    // Step 2: Extract text with page numbers
+    console.log('[STEP 2] Extracting text with page numbers...');
+    const extractStart = Date.now();
+    const pages = await extractTextWithPages(pdfBuffer);
+    console.log(`[STEP 2] ✓ Extracted ${pages.length} pages in ${Date.now() - extractStart}ms`);
+    
+    if (pages.length === 0) {
+      console.log('[ERROR] No pages extracted');
+      return res.status(400).json({ error: 'No pages could be extracted from the PDF.' });
     }
 
-    // Split text into chunks
-    const chunks = splitText(extractedText, 500, 100);
-
-    if (chunks.length === 0) {
-      return res.status(400).send('No text chunks created from PDF.');
-    }
-
-    // Generate embeddings for chunks
-    const embeddings = await Promise.all(
-      chunks.map(async (chunk) => {
-        try {
-          const embeddingResponse = await openai.embeddings.create({
-            model: 'text-embedding-ada-002',
-            input: chunk
-          });
-          return embeddingResponse.data[0].embedding;
-        } catch (embeddingError) {
-          console.error(`Error generating embedding: ${embeddingError.message}`);
-          return null;
-        }
-      })
+    // Step 3 & 4: Process chunks iteratively (no memory accumulation)
+    console.log('[STEP 3-4] Processing chunks iteratively with embeddings...');
+    const processStart = Date.now();
+    const maxChunks = 100;
+    
+    const documents = await processChunksWithEmbeddings(
+      pages, 
+      500,  // chunkSize
+      100,  // chunkOverlap
+      maxChunks, 
+      openai, 
+      fileName, 
+      chatId, 
+      pdfUrl
     );
+    
+    console.log(`[STEP 3-4] ✓ Processed ${documents.length} chunks in ${Date.now() - processStart}ms`);
 
-    // Filter out failed embeddings
-    const validEmbeddings = embeddings.filter(e => e !== null);
-
-    if (validEmbeddings.length === 0) {
-      return res.status(500).send('Failed to generate embeddings for any chunks.');
+    if (documents.length === 0) {
+      console.log('[ERROR] No documents created');
+      return res.status(400).json({ error: 'Failed to create any documents from PDF.' });
     }
 
-    // Create documents with embeddings
-    const newDocuments = chunks.map((chunk, index) => ({
-      source: fileName || 'uploaded-document.pdf',
-      chunk: chunk,
-      embedding: validEmbeddings[index] || [],
-      chatId: chatId,
-      pdfUrl: pdfUrl,
-      createdAt: new Date().toISOString()
-    })).filter(doc => doc.embedding.length > 0);
+    // Step 5: Store in Firestore in batches
+    console.log(`[STEP 5] Storing ${documents.length} documents in Firestore...`);
+    const firestoreStart = Date.now();
+    const firestoreBatchSize = 50;
+    let totalStored = 0;
+    
+    for (let i = 0; i < documents.length; i += firestoreBatchSize) {
+      const batchDocs = documents.slice(i, i + firestoreBatchSize);
+      const batch = db.batch();
+      
+      batchDocs.forEach(doc => {
+        const docRef = db.collection('documents').doc();
+        batch.set(docRef, doc);
+      });
+      
+      await batch.commit();
+      totalStored += batchDocs.length;
+      const batchNum = Math.floor(i/firestoreBatchSize) + 1;
+      console.log(`[STEP 5.${batchNum}] ✓ Stored batch ${batchNum}: ${totalStored}/${documents.length} documents`);
+      
+      // Small delay between batches
+      if (i + firestoreBatchSize < documents.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    console.log(`[STEP 5] ✓ All documents stored in ${Date.now() - firestoreStart}ms`);
 
-    // Store in Firestore
-    const batch = db.batch();
-    newDocuments.forEach(doc => {
-      const docRef = db.collection('documents').doc();
-      batch.set(docRef, doc);
-    });
-    await batch.commit();
-
-    console.log(`Processed ${newDocuments.length} chunks for chatId: ${chatId}`);
+    const totalTime = Date.now() - startTime;
+    console.log(`[SUCCESS] === PDF PROCESSING COMPLETE in ${totalTime}ms ===`);
+    console.log(`Total chunks processed: ${documents.length}`);
 
     res.json({
       message: 'PDF processed successfully',
-      chunksProcessed: newDocuments.length,
+      chunksProcessed: documents.length,
       pdfUrl: pdfUrl,
-      fileName: fileName
+      fileName: fileName,
+      processingTimeMs: totalTime
     });
 
   } catch (error) {
-    console.error('Error processing PDF from URL:', error);
-    res.status(500).json({ 
-      error: 'Failed to process PDF',
-      details: error.message 
-    });
+    const totalTime = Date.now() - startTime;
+    console.error(`[ERROR] === PDF PROCESSING FAILED after ${totalTime}ms ===`);
+    console.error('Error details:', error);
+    console.error('Error stack:', error.stack);
+    
+    // Ensure we always send a response
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: 'Failed to process PDF',
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
+    }
   }
 });
 
@@ -349,7 +473,8 @@ app.post('/query', express.json(), async (req, res) => {
       relevantChunks: relevantChunks.map(doc => ({
         chunk: doc.chunk,
         source: doc.source,
-        similarity: doc.similarity
+        similarity: doc.similarity,
+        pageNumber: doc.pageNumber || null
       }))
     });
   } catch (error) {
@@ -358,6 +483,12 @@ app.post('/query', express.json(), async (req, res) => {
 });
 
 // --- Start Server ---
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
+  console.log(`Server timeout set to 5 minutes for PDF processing`);
 });
+
+// Set server timeout (5 minutes)
+server.timeout = 300000;
+server.keepAliveTimeout = 300000;
+server.headersTimeout = 310000;

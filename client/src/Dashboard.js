@@ -5,7 +5,7 @@ import { useAuth } from './AuthContext';
 import { db } from './firebase';
 import Sidebar from './Sidebar';
 import ThemeToggle from './ThemeToggle';
-import PDFViewer from './components/PDFViewer';
+import EnhancedPDFViewer from './components/EnhancedPDFViewer';
 import { useUploadThing } from './utils/uploadthing';
 import { 
   collection, 
@@ -67,9 +67,11 @@ function Dashboard() {
   const [showPDFViewer, setShowPDFViewer] = useState(false);
   const [currentPDFUrl, setCurrentPDFUrl] = useState('');
   const [currentPDFTitle, setCurrentPDFTitle] = useState('');
+  const [questionsWithSources, setQuestionsWithSources] = useState([]);
   const messagesEndRef = useRef(null);
 
   // UploadThing hook
+  // eslint-disable-next-line no-unused-vars
   const { startUpload, isUploading } = useUploadThing("pdfUploader", {
     onClientUploadComplete: (files) => {
       console.log("Upload complete:", files);
@@ -113,6 +115,8 @@ function Dashboard() {
       
       // Transform Firestore messages to chat format
       const transformedChat = [];
+      const questionsData = [];
+      
       for (let i = 0; i < messages.length; i += 2) {
         const userMsg = messages[i];
         const aiMsg = messages[i + 1];
@@ -124,10 +128,20 @@ function Dashboard() {
             sources: aiMsg?.sources || [],
             loading: !aiMsg
           });
+          
+          // Collect questions with sources for PDF viewer
+          if (aiMsg && aiMsg.sources && aiMsg.sources.length > 0) {
+            questionsData.push({
+              question: userMsg.text,
+              answer: aiMsg.text,
+              sources: aiMsg.sources
+            });
+          }
         }
       }
       
       setChat(transformedChat);
+      setQuestionsWithSources(questionsData);
     });
 
     return () => unsubscribe();
@@ -238,6 +252,7 @@ function Dashboard() {
     }
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleClearChat = async () => {
     if (!currentChatId || !window.confirm('Are you sure you want to clear the chat history?')) {
       return;
@@ -464,11 +479,12 @@ function Dashboard() {
         </div>
       )}
       
-      {/* PDF Viewer Modal */}
+      {/* Enhanced PDF Viewer Modal */}
       {showPDFViewer && (
-        <PDFViewer
+        <EnhancedPDFViewer
           pdfUrl={currentPDFUrl}
           title={currentPDFTitle}
+          questions={questionsWithSources}
           onClose={() => setShowPDFViewer(false)}
         />
       )}

@@ -1,0 +1,341 @@
+/* Enhanced PDF Viewer Overlay */
+.enhanced-pdf-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(5px);
+  z-index: 3000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.enhanced-pdf-container {
+  background: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  width: 95%;
+  height: 95%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.enhanced-pdf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+}
+
+.enhanced-pdf-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: var(--bg-hover);
+  transform: rotate(90deg);
+}
+
+/* Main Content Layout */
+.enhanced-pdf-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Questions Sidebar */
+.questions-sidebar {
+  width: 320px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.questions-sidebar h3 {
+  margin: 0;
+  padding: 16px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.questions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.question-item {
+  background: var(--bg-primary);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.question-item:hover {
+  border-color: var(--accent-link);
+  box-shadow: 0 2px 8px var(--shadow-color);
+}
+
+.question-item.active {
+  border-color: var(--accent-link);
+  background: var(--bg-tertiary);
+  box-shadow: 0 4px 12px var(--shadow-hover);
+}
+
+.question-number {
+  display: inline-block;
+  background: var(--accent-link);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.question-text {
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.sources-count {
+  color: var(--text-secondary);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* PDF Viewer Section */
+.pdf-viewer-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* PDF Controls */
+.pdf-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page-controls,
+.zoom-controls,
+.highlight-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-controls button {
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.pdf-controls button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.pdf-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pdf-controls span {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.highlight-info {
+  color: var(--accent-link);
+  font-weight: 600;
+}
+
+/* PDF Document Container */
+.pdf-document-container {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-tertiary);
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+.pdf-document-container .react-pdf__Document {
+  display: flex;
+  justify-content: center;
+}
+
+.pdf-document-container .react-pdf__Page {
+  box-shadow: 0 4px 16px var(--shadow-color);
+  background: white;
+}
+
+.pdf-document-container .react-pdf__Page.has-highlights {
+  box-shadow: 0 0 0 3px var(--accent-link), 0 4px 16px var(--shadow-color);
+}
+
+/* Highlight text layer styling */
+.pdf-document-container .react-pdf__Page__textContent mark {
+  background: rgba(255, 235, 59, 0.5);
+  padding: 2px;
+  border-radius: 2px;
+}
+
+.pdf-loading,
+.pdf-error {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
+.pdf-error {
+  color: #ef4444;
+}
+
+/* Current Highlight Info */
+.current-highlight-info {
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  padding: 16px 20px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.highlight-label {
+  color: var(--accent-link);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.highlight-text {
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.highlight-similarity {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Scrollbar Styling */
+.questions-list::-webkit-scrollbar,
+.pdf-document-container::-webkit-scrollbar,
+.current-highlight-info::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.questions-list::-webkit-scrollbar-track,
+.pdf-document-container::-webkit-scrollbar-track,
+.current-highlight-info::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+.questions-list::-webkit-scrollbar-thumb,
+.pdf-document-container::-webkit-scrollbar-thumb,
+.current-highlight-info::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.questions-list::-webkit-scrollbar-thumb:hover,
+.pdf-document-container::-webkit-scrollbar-thumb:hover,
+.current-highlight-info::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .questions-sidebar {
+    width: 280px;
+  }
+}
+
+@media (max-width: 768px) {
+  .enhanced-pdf-container {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .enhanced-pdf-content {
+    flex-direction: column;
+  }
+
+  .questions-sidebar {
+    width: 100%;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .pdf-controls {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .page-controls,
+  .zoom-controls,
+  .highlight-controls {
+    justify-content: center;
+  }
+}
