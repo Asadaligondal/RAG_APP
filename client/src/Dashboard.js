@@ -7,6 +7,7 @@ import Sidebar from './Sidebar';
 import ThemeToggle from './ThemeToggle';
 import EnhancedPDFViewer from './components/EnhancedPDFViewer';
 import { useUploadThing } from './utils/uploadthing';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 import { 
   collection, 
   addDoc, 
@@ -183,7 +184,7 @@ function Dashboard() {
       });
 
       // Send PDF URL to backend for processing
-      const response = await axios.post('/upload-from-url', {
+      const response = await axios.post(`${API_URL}/upload-from-url`, {
         pdfUrl: pdfUrl,
         chatId: newChatId,
         fileName: fileName
@@ -222,9 +223,9 @@ function Dashboard() {
       });
 
       // Call backend API for AI response
-      const response = await axios.post('/query', { 
+      const response = await axios.post(`${API_URL}/query`, { 
         question: currentQuestion,
-        chatId: currentChatId // Send chatId to backend
+        chatId: currentChatId 
       }, {
         headers: { 'Content-Type': 'application/json' }
       });
