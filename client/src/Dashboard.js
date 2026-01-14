@@ -7,7 +7,6 @@ import Sidebar from './Sidebar';
 import ThemeToggle from './ThemeToggle';
 import EnhancedPDFViewer from './components/EnhancedPDFViewer';
 import { useUploadThing } from './utils/uploadthing';
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 import { 
   collection, 
   addDoc, 
@@ -23,6 +22,7 @@ import {
 } from 'firebase/firestore';
 import './Dashboard.css';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const SourcesSection = ({ sources }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
