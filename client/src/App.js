@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
-import { ThemeProvider } from './ThemeContext';
 import LandingPage from './LandingPage';
 import AppLayout from './AppLayout';
 import Dashboard from './Dashboard';
@@ -13,8 +12,7 @@ import './App.css';
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
+    <AuthProvider>
         <Router>
           <Routes>
             <Route path="/" element={<LandingPage />} />
@@ -29,7 +27,6 @@ function App() {
           </Routes>
         </Router>
       </AuthProvider>
-    </ThemeProvider>
   );
 }
 

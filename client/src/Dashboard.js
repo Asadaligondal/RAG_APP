@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import api, { streamQuery } from './utils/api';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
+import { Paperclip, Search, MessageCircle, Lightbulb, Zap, FileText, Plus, Upload, Send, Bot, ChevronDown, ChevronRight } from 'lucide-react';
 import Sidebar from './Sidebar';
 import EnhancedPDFViewer from './components/EnhancedPDFViewer';
 import { useUploadThing } from './utils/uploadthing';
@@ -32,7 +33,7 @@ const SourcesSection = ({ sources }) => {
         className="view-sources-btn"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        {isExpanded ? '▼' : '▶'} View Sources ({sources.length})
+        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} View Sources ({sources.length})
       </button>
       {isExpanded && (
         <div className="sources-content">
@@ -372,19 +373,19 @@ function Dashboard() {
         <div className="landing-screen">
           <div className="landing-content">
             <div className="landing-center">
-              <div className="logo">ChatPDF</div>
+              <div className="logo">DocuBrain</div>
               <h1 className="landing-title">What can I help with?</h1>
               
               <div className="input-section">
                 <div className="input-toolbar">
                   <button className="toolbar-btn" title="Attach files">
-                    📎 Attach
+                    <Paperclip size={16} /> Attach
                   </button>
                   <button className="toolbar-btn" title="Search">
-                    🔍 Search
+                    <Search size={16} /> Search
                   </button>
                   <button className="toolbar-btn" title="Reason">
-                    💭 Reason
+                    <MessageCircle size={16} /> Reason
                   </button>
                 </div>
                 
@@ -406,7 +407,7 @@ function Dashboard() {
                   
                   {files.length > 0 && (
                     <button type="submit" disabled={loading} className="send-btn">
-                      {loading ? '⏳' : '⬆️'}
+                      {loading ? <span className="btn-loading" /> : <Upload size={18} />}
                     </button>
                   )}
                 </form>
@@ -414,19 +415,19 @@ function Dashboard() {
               
               <div className="suggestion-chips">
                 <div className="chip">
-                  <span className="chip-icon">💡</span> Brainstorm
+                  <Lightbulb size={16} className="chip-icon" /> Brainstorm
                 </div>
                 <div className="chip">
-                  <span className="chip-icon">⚡</span> Code
+                  <Zap size={16} className="chip-icon" /> Code
                 </div>
                 <div className="chip">
-                  <span className="chip-icon">📝</span> Summarize text
+                  <FileText size={16} className="chip-icon" /> Summarize text
                 </div>
                 <div className="chip">
-                  <span className="chip-icon">💬</span> Get advice
+                  <MessageCircle size={16} className="chip-icon" /> Get advice
                 </div>
                 <div className="chip">
-                  <span className="chip-icon">➕</span> More
+                  <Plus size={16} className="chip-icon" /> More
                 </div>
               </div>
             </div>
@@ -440,7 +441,7 @@ function Dashboard() {
           <div className="chat-messages-container">
             {chat.length === 0 ? (
               <div className="empty-chat-state">
-                <div className="empty-icon">💬</div>
+                <div className="empty-icon"><MessageCircle size={40} /></div>
                 <h3>How can I help you today?</h3>
                 <p>Ask a question about your document, or try one of these:</p>
                 {suggestedQuestions.length > 0 && (
@@ -479,10 +480,10 @@ function Dashboard() {
                     <div className="message-row ai-row">
                       <div className="message-content">
                         <div className="avatar ai-avatar">
-                          <span>🤖</span>
+                          <Bot size={20} />
                         </div>
                         <div className="message-text">
-                          <div className="message-author">ChatPDF</div>
+                          <div className="message-author">DocuBrain</div>
                           {entry.loading ? (
                             <div className="message-body">
                               {streamingAnswer?.question === entry.question && streamingAnswer.answer ? (
@@ -517,7 +518,7 @@ function Dashboard() {
           {currentChatId && (
             <div className="preview-button-container">
               <button onClick={handlePreviewPDF} className="preview-pdf-btn">
-                📄 Preview PDF
+                <FileText size={16} /> Preview PDF
               </button>
             </div>
           )}
@@ -529,7 +530,7 @@ function Dashboard() {
                   type="text"
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="Message ChatPDF..."
+                  placeholder="Message DocuBrain..."
                   disabled={loading}
                   className="chat-text-input"
                 />
@@ -538,7 +539,7 @@ function Dashboard() {
                   disabled={!question.trim() || loading}
                   className="chat-send-button"
                 >
-                  {loading ? '⏳' : '⬆️'}
+                  {loading ? <span className="btn-loading" /> : <Send size={18} />}
                 </button>
               </div>
             </form>

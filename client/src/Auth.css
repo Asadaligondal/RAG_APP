@@ -74,8 +74,8 @@
 
 .form-group input:focus {
   outline: none;
-  border-color: var(--accent-link);
-  box-shadow: 0 0 0 3px var(--shadow-color);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(16, 163, 127, 0.2);
 }
 
 .form-group input::placeholder {
@@ -128,7 +128,7 @@
 }
 
 .auth-link {
-  color: var(--accent-link);
+  color: var(--accent-primary);
   text-decoration: none;
   font-weight: 600;
   transition: color 0.3s ease;

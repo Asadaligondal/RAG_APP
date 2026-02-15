@@ -16,8 +16,8 @@
 }
 
 .sidebar-nav {
-  width: 280px;
-  background: var(--bg-secondary);
+  width: 260px;
+  background: var(--sidebar-bg, var(--bg-secondary));
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -37,7 +37,7 @@
   right: -12px;
   width: 24px;
   height: 24px;
-  background: var(--bg-primary);
+  background: var(--sidebar-bg, var(--bg-primary));
   border: 1px solid var(--border-color);
   border-radius: 50%;
   color: var(--text-secondary);
@@ -81,8 +81,8 @@
 
 .new-chat-btn {
   width: 100%;
-  padding: 12px;
-  background: var(--bg-primary);
+  padding: 12px 14px;
+  background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -102,18 +102,9 @@
   gap: 0;
 }
 
-.sidebar-nav.collapsed .new-chat-btn .plus-icon {
-  font-size: 18px;
-}
-
 .new-chat-btn:hover {
-  background: var(--bg-tertiary);
+  background: var(--bg-hover);
   border-color: var(--border-hover);
-}
-
-.plus-icon {
-  font-size: 18px;
-  font-weight: 600;
 }
 
 .chats-list {
@@ -218,7 +209,7 @@
 .sidebar-footer {
   border-top: 1px solid var(--border-color);
   padding: 16px;
-  background: var(--bg-primary);
+  background: var(--sidebar-bg, var(--bg-primary));
 }
 
 .sidebar-nav.collapsed .sidebar-footer {

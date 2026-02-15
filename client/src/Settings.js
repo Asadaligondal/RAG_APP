@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import api from './utils/api';
+import { RefreshCw, Crown, Mail, User } from 'lucide-react';
 import './Settings.css';
 
 function Settings() {
@@ -44,7 +45,8 @@ function Settings() {
           <div className="settings-section-header">
             <h2>Usage</h2>
             <button type="button" className="refresh-usage-btn" onClick={fetchUsage} disabled={usageLoading}>
-              {usageLoading ? '...' : '↻ Refresh'}
+              <RefreshCw size={14} className={usageLoading ? 'spin' : ''} />
+              {usageLoading ? 'Loading...' : 'Refresh'}
             </button>
           </div>
           <div className="settings-card usage-card">
@@ -53,10 +55,12 @@ function Settings() {
             ) : (
               <>
                 <div className="usage-plan-badge">
-                  {usage.plan === 'pro' ? '⭐ Pro' : 'Free'} Plan
-                  {usage.periodMonth && (
-                    <span className="usage-period"> · {usage.periodMonth}</span>
-                  )}
+                  <span className="usage-plan-label">
+                    {usage.plan === 'pro' ? <><Crown size={16} /> Pro</> : 'Free'} Plan
+                    {usage.periodMonth && (
+                      <span className="usage-period"> · {usage.periodMonth}</span>
+                    )}
+                  </span>
                 </div>
                 <div className="usage-stats">
                   <div className="usage-stat">
@@ -98,11 +102,11 @@ function Settings() {
           <h2>Profile</h2>
           <div className="settings-card">
             <div className="settings-row">
-              <label>Email</label>
+              <label><Mail size={14} /> Email</label>
               <span className="settings-value">{user?.email}</span>
             </div>
             <div className="settings-row">
-              <label>Account ID</label>
+              <label><User size={14} /> Account ID</label>
               <span className="settings-value settings-value-mono">
                 {user?.uid?.slice(0, 12)}...
               </span>

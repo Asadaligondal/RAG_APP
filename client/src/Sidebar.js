@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from './utils/api';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
+import { Menu, ChevronLeft, ChevronRight, Plus, FileText, Trash2 } from 'lucide-react';
 import { 
   collection, 
   query, 
@@ -61,20 +62,21 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
       <button 
         className="mobile-menu-btn"
         onClick={() => setIsMobileOpen(!isMobileOpen)}
+        aria-label="Toggle sidebar"
       >
-        ☰
+        <Menu size={20} />
       </button>
 
       {/* Sidebar */}
       <aside className={`sidebar-nav ${isMobileOpen ? 'mobile-open' : ''} ${isCollapsed ? 'collapsed' : ''}`}>
         <button className="collapse-btn" onClick={onToggleCollapse} title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {isCollapsed ? '▶' : '◀'}
+          {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
         
         <div className="sidebar-header">
           <h2 className="sidebar-logo">{isCollapsed ? 'DB' : 'DocuBrain'}</h2>
           <button className="new-chat-btn" onClick={onNewChat}>
-            <span className="plus-icon">+</span> {!isCollapsed && 'New Chat'}
+            <Plus size={18} /> {!isCollapsed && 'New Chat'}
           </button>
         </div>
 
@@ -92,7 +94,7 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
                 }}
               >
                 <div className="chat-item-content">
-                  <span className="chat-icon">📄</span>
+                  <FileText size={16} className="chat-icon" />
                   <span className="chat-title">{chat.title || 'Untitled Chat'}</span>
                 </div>
                 <button
@@ -100,7 +102,7 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
                   onClick={(e) => handleDeleteChat(e, chat.id)}
                   title="Delete chat"
                 >
-                  🗑️
+                  <Trash2 size={14} />
                 </button>
               </div>
             ))

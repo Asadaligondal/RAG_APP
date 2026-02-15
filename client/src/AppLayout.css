@@ -10,8 +10,8 @@
 /* Top Navbar */
 .app-navbar {
   flex-shrink: 0;
-  height: 56px;
-  background: var(--bg-secondary);
+  height: 52px;
+  background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
   position: sticky;
   top: 0;
@@ -81,11 +81,13 @@
 
 .nav-link.active {
   color: var(--accent-primary);
-  background: var(--bg-hover);
+  background: transparent;
 }
 
 .nav-link-icon {
-  font-size: 16px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .navbar-right {
@@ -104,7 +106,7 @@
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-primary);
@@ -139,9 +141,10 @@
 }
 
 .dropdown-arrow {
-  font-size: 10px;
+  display: flex;
   opacity: 0.7;
   transition: transform 0.2s;
+  flex-shrink: 0;
 }
 
 .user-menu-trigger[aria-expanded="true"] .dropdown-arrow {
@@ -234,6 +237,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--bg-primary);
 }
 
 /* Mobile Responsive */
@@ -244,11 +248,11 @@
 
   .navbar-links {
     position: fixed;
-    top: 56px;
+    top: 52px;
     left: 0;
     right: 0;
     flex-direction: column;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     border-bottom: 1px solid var(--border-color);
     padding: 16px;
     gap: 8px;

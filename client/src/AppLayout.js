@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import ThemeToggle from './ThemeToggle';
+import { LayoutDashboard, FileText, Settings, Menu, ChevronDown } from 'lucide-react';
 import './AppLayout.css';
 
 function AppLayout() {
@@ -23,9 +23,9 @@ function AppLayout() {
   };
 
   const navLinks = [
-    { to: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { to: '/documents', label: 'Documents', icon: '📁' },
-    { to: '/settings', label: 'Settings', icon: '⚙️' },
+    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/documents', label: 'Documents', icon: FileText },
+    { to: '/settings', label: 'Settings', icon: Settings },
   ];
 
   return (
@@ -38,7 +38,7 @@ function AppLayout() {
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle menu"
           >
-            ☰
+            <Menu size={20} />
           </button>
 
           <NavLink to="/dashboard" className="navbar-logo">
@@ -55,14 +55,13 @@ function AppLayout() {
                 }
                 onClick={() => setMobileMenuOpen(false)}
               >
-                <span className="nav-link-icon">{link.icon}</span>
+                <span className="nav-link-icon">{React.createElement(link.icon, { size: 18 })}</span>
                 {link.label}
               </NavLink>
             ))}
           </nav>
 
           <div className="navbar-right">
-            <ThemeToggle />
             <div className="user-menu-wrapper">
               <button
                 className="user-menu-trigger"
@@ -74,7 +73,7 @@ function AppLayout() {
                   {user?.email?.charAt(0).toUpperCase()}
                 </span>
                 <span className="user-email-sm">{user?.email}</span>
-                <span className="dropdown-arrow">▼</span>
+                <ChevronDown size={14} className="dropdown-arrow" />
               </button>
               {userMenuOpen && (
                 <>

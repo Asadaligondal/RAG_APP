@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
+import { Search, FolderOpen, FileText, Trash2 } from 'lucide-react';
 import {
   collection,
   query,
@@ -82,7 +83,7 @@ function Documents() {
           Manage all your uploaded documents in one place
         </p>
         <div className="documents-search">
-          <span className="search-icon">🔍</span>
+          <Search size={18} className="search-icon" />
           <input
             type="text"
             placeholder="Search documents..."
@@ -102,7 +103,7 @@ function Documents() {
       <div className="documents-content">
         {filteredDocuments.length === 0 ? (
           <div className="documents-empty">
-            <div className="empty-icon">📁</div>
+            <div className="empty-icon"><FolderOpen size={48} /></div>
             <h2>
               {searchQuery ? 'No documents match your search' : 'No documents yet'}
             </h2>
@@ -129,7 +130,7 @@ function Documents() {
                 onClick={() => handleOpen(doc.id)}
               >
                 <div className="document-card-header">
-                  <span className="document-icon">📄</span>
+                  <FileText size={20} className="document-icon" />
                   <h3 className="document-title" title={doc.title || 'Untitled'}>
                     {doc.title || 'Untitled Document'}
                   </h3>
@@ -153,7 +154,7 @@ function Documents() {
                     disabled={deletingId === doc.id}
                     title="Delete document"
                   >
-                    {deletingId === doc.id ? '…' : '🗑️ Delete'}
+                    {deletingId === doc.id ? '…' : <><Trash2 size={14} /> Delete</>}
                   </button>
                 </div>
               </div>

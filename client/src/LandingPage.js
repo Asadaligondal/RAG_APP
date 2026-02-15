@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import ThemeToggle from './ThemeToggle';
+import { Zap, Shield, Quote } from 'lucide-react';
 import './LandingPage.css';
 
 function LandingPage() {
@@ -9,57 +9,64 @@ function LandingPage() {
 
   return (
     <div className="landing-page">
-      <ThemeToggle />
-      {/* Navbar */}
-      <nav className="navbar">
-        <div className="nav-container">
-          <h1 className="logo">DocuBrain</h1>
-          <Link to={user ? "/dashboard" : "/login"} className="login-btn">
-            {user ? "Go to Dashboard" : "Login"}
-          </Link>
+      <nav className="landing-navbar">
+        <div className="landing-nav-container">
+          <Link to="/" className="landing-logo">DocuBrain</Link>
+          <div className="landing-nav-right">
+            <Link to={user ? "/dashboard" : "/login"} className="landing-nav-btn">
+              {user ? "Dashboard" : "Log in"}
+            </Link>
+          </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="hero">
-        <div className="hero-content">
-          <h1 className="hero-title">Chat with your PDF Documents in Seconds</h1>
-          <p className="hero-subtitle">
-            AI-powered analysis for your contracts, resumes, and reports. 
-            Get instant answers from your documents with cutting-edge RAG technology.
-          </p>
-          <Link to={user ? "/dashboard" : "/signup"} className="cta-button">
-            {user ? "Go to Dashboard" : "Get Started for Free"}
-          </Link>
-        </div>
-      </section>
+      <main className="landing-main">
+        <section className="landing-hero">
+          <div className="landing-hero-content">
+            <h1 className="landing-hero-title">
+              Chat with your PDF documents in seconds
+            </h1>
+            <p className="landing-hero-subtitle">
+              AI-powered analysis for contracts, resumes, and reports.
+              Get instant answers with cutting-edge RAG technology.
+            </p>
+            <Link to={user ? "/dashboard" : "/signup"} className="landing-cta">
+              {user ? "Go to Dashboard" : "Get started free"}
+            </Link>
+          </div>
+        </section>
 
-      {/* Features Section */}
-      <section className="features">
-        <h2 className="features-title">Why Choose DocuBrain?</h2>
-        <div className="features-grid">
-          <div className="feature-card">
-            <div className="feature-icon">⚡</div>
-            <h3>Instant Answers</h3>
-            <p>Get intelligent responses from your documents in seconds, powered by advanced AI.</p>
+        <section className="landing-features">
+          <h2 className="landing-features-title">Why DocuBrain?</h2>
+          <div className="landing-features-grid">
+            <div className="landing-feature-card">
+              <div className="landing-feature-icon">
+                <Zap size={24} strokeWidth={2} />
+              </div>
+              <h3>Instant answers</h3>
+              <p>Get intelligent responses from your documents in seconds, powered by advanced AI.</p>
+            </div>
+            <div className="landing-feature-card">
+              <div className="landing-feature-icon">
+                <Shield size={24} strokeWidth={2} />
+              </div>
+              <h3>Secure uploads</h3>
+              <p>Your documents are processed securely with enterprise-grade encryption.</p>
+            </div>
+            <div className="landing-feature-card">
+              <div className="landing-feature-icon">
+                <Quote size={24} strokeWidth={2} />
+              </div>
+              <h3>Smart citations</h3>
+              <p>Every answer includes source references so you can verify the information.</p>
+            </div>
           </div>
-          <div className="feature-card">
-            <div className="feature-icon">🔒</div>
-            <h3>Secure Uploads</h3>
-            <p>Your documents are processed securely with enterprise-grade encryption.</p>
-          </div>
-          <div className="feature-card">
-            <div className="feature-icon">🎯</div>
-            <h3>Smart Citations</h3>
-            <p>Every answer includes source references so you can verify the information.</p>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Footer */}
-      <footer className="footer">
-        <p>&copy; 2026 DocuBrain. All rights reserved.</p>
-      </footer>
+        <footer className="landing-footer">
+          <p>&copy; 2026 DocuBrain. All rights reserved.</p>
+        </footer>
+      </main>
     </div>
   );
 }

@@ -219,7 +219,7 @@
 
 .pdf-document-container .react-pdf__Page {
   box-shadow: 0 4px 16px var(--shadow-color);
-  background: white;
+  background: var(--bg-primary);
 }
 
 .pdf-document-container .react-pdf__Page.has-highlights {
