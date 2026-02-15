@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import api from './utils/api';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
 import { 
   collection, 
   query, 
   orderBy, 
-  onSnapshot,
-  deleteDoc,
-  doc
+  onSnapshot
 } from 'firebase/firestore';
 import './Sidebar.css';
 
@@ -35,15 +34,16 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
 
   const handleDeleteChat = async (e, chatId) => {
     e.stopPropagation();
-    if (!window.confirm('Delete this chat?')) return;
+    if (!window.confirm('Delete this chat and its document?')) return;
 
     try {
-      await deleteDoc(doc(db, 'users', user.uid, 'chats', chatId));
+      await api.delete(`/api/chats/${chatId}`);
       if (currentChatId === chatId) {
         onNewChat();
       }
     } catch (error) {
       console.error('Error deleting chat:', error);
+      alert('Failed to delete. Please try again.');
     }
   };
 

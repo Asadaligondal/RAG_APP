@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useNavigate, useLocation } from 'react-router-dom';
+import api, { streamQuery } from './utils/api';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
 import Sidebar from './Sidebar';
@@ -21,7 +21,6 @@ import {
 } from 'firebase/firestore';
 import './Dashboard.css';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 const SourcesSection = ({ sources }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
@@ -57,6 +56,7 @@ const SourcesSection = ({ sources }) => {
 function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [files, setFiles] = useState([]);
   const [question, setQuestion] = useState('');
   const [chat, setChat] = useState([]);
@@ -68,6 +68,8 @@ function Dashboard() {
   const [currentPDFUrl, setCurrentPDFUrl] = useState('');
   const [currentPDFTitle, setCurrentPDFTitle] = useState('');
   const [questionsWithSources, setQuestionsWithSources] = useState([]);
+  const [streamingAnswer, setStreamingAnswer] = useState(null); // { question, answer, sources }
+  const [suggestedQuestions, setSuggestedQuestions] = useState([]);
   const messagesEndRef = useRef(null);
 
   // UploadThing hook
@@ -91,6 +93,31 @@ function Dashboard() {
   useEffect(() => {
     scrollToBottom();
   }, [chat]);
+
+  // Open specific chat when navigating from Documents page
+  useEffect(() => {
+    const chatIdFromState = location.state?.chatId;
+    if (chatIdFromState) {
+      setCurrentChatId(chatIdFromState);
+    }
+  }, [location.state?.chatId]);
+
+  // Fetch suggested questions when chat is selected
+  useEffect(() => {
+    if (!user || !currentChatId) {
+      setSuggestedQuestions([]);
+      return;
+    }
+    const fetchChat = async () => {
+      const chatDoc = await getDoc(doc(db, 'users', user.uid, 'chats', currentChatId));
+      if (chatDoc.exists()) {
+        setSuggestedQuestions(chatDoc.data().suggestedQuestions || []);
+      } else {
+        setSuggestedQuestions([]);
+      }
+    };
+    fetchChat();
+  }, [user, currentChatId]);
 
   useEffect(() => {
     if (!user) {
@@ -182,38 +209,43 @@ function Dashboard() {
         pdfUrl: pdfUrl // Store UploadThing URL for preview
       });
 
-      // Send PDF URL to backend for processing
-      const response = await axios.post(`${API_URL}/upload-from-url`, {
+      // Send PDF URL to backend for processing (api adds auth token automatically)
+      const response = await api.post('/upload-from-url', {
         pdfUrl: pdfUrl,
         chatId: newChatId,
         fileName: fileName
-      }, {
-        headers: { 'Content-Type': 'application/json' }
       });
       
       setUploadStatus(
         `Uploaded ${files.length} file(s). ${response.data.chunksProcessed} chunks processed and stored.`
       );
       setFiles([]);
-      setCurrentChatId(newChatId); // Switch to new chat
+      setCurrentChatId(newChatId);
+      if (response.data.suggestedQuestions?.length) {
+        setSuggestedQuestions(response.data.suggestedQuestions);
+      }
     } catch (error) {
       console.error("Upload error:", error);
-      setUploadStatus(`Error: ${error.response?.data || error.message}`);
+      const errMsg = error.response?.data?.error || error.response?.data || error.message;
+      setUploadStatus(`Error: ${errMsg}`);
+      if (error.response?.status === 403 && error.response?.data?.limitReached) {
+        try {
+          await deleteDoc(doc(db, 'users', user.uid, 'chats', newChatId));
+        } catch (_) {}
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuery = async (e) => {
-    e.preventDefault();
-    if (!question.trim() || !currentChatId) return;
-
-    const currentQuestion = question;
+  const submitQuestion = async (questionText) => {
+    if (!questionText?.trim() || !currentChatId) return;
+    const currentQuestion = questionText.trim();
     setQuestion('');
     setLoading(true);
+    setStreamingAnswer({ question: currentQuestion, answer: '', sources: [] });
 
     try {
-      // Save user message to Firestore
       const messagesRef = collection(db, 'users', user.uid, 'chats', currentChatId, 'messages');
       await addDoc(messagesRef, {
         text: currentQuestion,
@@ -221,35 +253,49 @@ function Dashboard() {
         createdAt: serverTimestamp()
       });
 
-      // Call backend API for AI response
-      const response = await axios.post(`${API_URL}/query`, { 
-        question: currentQuestion,
-        chatId: currentChatId 
-      }, {
-        headers: { 'Content-Type': 'application/json' }
+      await streamQuery(currentQuestion, currentChatId, {
+        onChunk: (content) => {
+          setStreamingAnswer(prev => prev ? { ...prev, answer: prev.answer + content } : null);
+        },
+        onDone: (sources) => {
+          setStreamingAnswer(prev => {
+            if (prev) {
+              addDoc(messagesRef, {
+                text: prev.answer,
+                sender: 'ai',
+                sources: sources || [],
+                createdAt: serverTimestamp()
+              }).catch(console.error);
+            }
+            return null;
+          });
+        },
+        onError: (err) => {
+          setStreamingAnswer(null);
+          addDoc(messagesRef, {
+            text: `Error: ${err.message}`,
+            sender: 'ai',
+            createdAt: serverTimestamp()
+          }).catch(console.error);
+        }
       });
-
-      // Save AI response to Firestore with sources
-      await addDoc(messagesRef, {
-        text: response.data.answer,
-        sender: 'ai',
-        sources: response.data.relevantChunks || [],
-        createdAt: serverTimestamp()
-      });
-
     } catch (error) {
       console.error("Query error:", error);
-      
-      // Save error message to Firestore
+      setStreamingAnswer(null);
       const messagesRef = collection(db, 'users', user.uid, 'chats', currentChatId, 'messages');
       await addDoc(messagesRef, {
-        text: `Error: ${error.response?.data || error.message}`,
+        text: `Error: ${error.message}`,
         sender: 'ai',
         createdAt: serverTimestamp()
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleQuery = (e) => {
+    e.preventDefault();
+    submitQuestion(question);
   };
 
   // eslint-disable-next-line no-unused-vars
@@ -281,6 +327,7 @@ function Dashboard() {
     setChat([]);
     setFiles([]);
     setUploadStatus('');
+    setSuggestedQuestions([]);
   };
 
   const handlePreviewPDF = async () => {
@@ -395,7 +442,21 @@ function Dashboard() {
               <div className="empty-chat-state">
                 <div className="empty-icon">💬</div>
                 <h3>How can I help you today?</h3>
-                <p>Upload a document and start asking questions</p>
+                <p>Ask a question about your document, or try one of these:</p>
+                {suggestedQuestions.length > 0 && (
+                  <div className="suggested-questions">
+                    {suggestedQuestions.map((q, i) => (
+                      <button
+                        key={i}
+                        className="suggestion-chip"
+                        onClick={() => submitQuestion(q)}
+                        disabled={loading}
+                      >
+                        {q}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -424,11 +485,18 @@ function Dashboard() {
                           <div className="message-author">ChatPDF</div>
                           {entry.loading ? (
                             <div className="message-body">
-                              <span className="typing-indicator">
-                                <span className="typing-dot"></span>
-                                <span className="typing-dot"></span>
-                                <span className="typing-dot"></span>
-                              </span>
+                              {streamingAnswer?.question === entry.question && streamingAnswer.answer ? (
+                                <>
+                                  {streamingAnswer.answer}
+                                  <span className="streaming-cursor">▊</span>
+                                </>
+                              ) : (
+                                <span className="typing-indicator">
+                                  <span className="typing-dot"></span>
+                                  <span className="typing-dot"></span>
+                                  <span className="typing-dot"></span>
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <div className="message-body">

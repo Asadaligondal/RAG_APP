@@ -14,7 +14,89 @@ const port = 5000;
 
 // --- Firebase Connection ---
 const { admin, db, auth } = require('./firebase');
+const { FieldValue } = require('firebase-admin/firestore');
 console.log("Firebase initialized successfully!");
+
+// --- Plan limits (per month) ---
+const PLAN_LIMITS = {
+  free: { documents: 5, queries: 50 },
+  pro: { documents: 100, queries: 500 }
+};
+
+async function getUserPlan(userId) {
+  try {
+    const profileRef = db.doc(`users/${userId}/profile/account`);
+    const profile = await profileRef.get();
+    const plan = profile.exists ? (profile.data().plan || 'free') : 'free';
+    return plan in PLAN_LIMITS ? plan : 'free';
+  } catch (_) {
+    return 'free';
+  }
+}
+
+async function getUsageWithPeriod(userId) {
+  const usageRef = db.collection('usage').doc(userId);
+  const doc = await usageRef.get();
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const data = doc.exists ? doc.data() : {};
+  if (data.periodMonth !== currentMonth) {
+    return { documentsCount: 0, queriesCount: 0, periodMonth: currentMonth, lastUpdated: null };
+  }
+  return {
+    documentsCount: data.documentsCount || 0,
+    queriesCount: data.queriesCount || 0,
+    periodMonth: data.periodMonth || currentMonth,
+    lastUpdated: data.lastUpdated || null
+  };
+}
+
+async function checkLimit(userId, field) {
+  const [plan, usage] = await Promise.all([getUserPlan(userId), getUsageWithPeriod(userId)]);
+  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+  const limit = field === 'documentsCount' ? limits.documents : limits.queries;
+  const current = field === 'documentsCount' ? usage.documentsCount : usage.queriesCount;
+  return { allowed: current < limit, current, limit, plan };
+}
+
+// --- Usage tracking helper (resets monthly) ---
+async function incrementUsage(userId, field, amount = 1) {
+  try {
+    const usageRef = db.collection('usage').doc(userId);
+    const doc = await usageRef.get();
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const data = doc.exists ? doc.data() : {};
+
+    if (data.periodMonth !== currentMonth) {
+      await usageRef.set({
+        documentsCount: 0,
+        queriesCount: 0,
+        periodMonth: currentMonth,
+        lastUpdated: new Date().toISOString()
+      });
+    }
+    await usageRef.update({ [field]: FieldValue.increment(amount), lastUpdated: new Date().toISOString() });
+    console.log(`[USAGE] Incremented ${field} for user ${userId.slice(0, 8)}...`);
+  } catch (err) {
+    console.error('[USAGE] Increment failed:', err.message, err.code || '');
+  }
+}
+
+// --- Auth Middleware: Verify Firebase ID Token ---
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authorization required. Please sign in.' });
+  }
+  const token = authHeader.split('Bearer ')[1];
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    req.user = { uid: decodedToken.uid };
+    next();
+  } catch (err) {
+    console.error('Auth verification failed:', err.message);
+    return res.status(401).json({ error: 'Invalid or expired token. Please sign in again.' });
+  }
+}
 // --- Firebase Auth: Email/Password Sign-In ---
 app.post('/signin', express.json(), async (req, res) => {
   const { email, password } = req.body;
@@ -109,7 +191,7 @@ async function extractTextWithPages(pdfBuffer) {
 }
 
 // Process chunks iteratively without storing all in memory
-async function processChunksWithEmbeddings(pages, chunkSize, chunkOverlap, maxChunks, openai, fileName, chatId, pdfUrl) {
+async function processChunksWithEmbeddings(pages, chunkSize, chunkOverlap, maxChunks, openai, fileName, chatId, pdfUrl, userId) {
   // Validate overlap
   if (chunkOverlap >= chunkSize) {
     throw new Error(`Invalid overlap: ${chunkOverlap} must be < ${chunkSize}`);
@@ -149,6 +231,7 @@ async function processChunksWithEmbeddings(pages, chunkSize, chunkOverlap, maxCh
             pageNumber: pageNumber,
             embedding: embeddingResponse.data[0].embedding,
             chatId: chatId,
+            userId: userId || null,
             pdfUrl: pdfUrl,
             createdAt: new Date().toISOString()
           });
@@ -313,13 +396,14 @@ app.post('/upload', upload.array('pdf'), async (req, res) => {
   }
 });
 
-// POST endpoint for processing PDFs from UploadThing URLs
-app.post('/upload-from-url', express.json(), async (req, res) => {
+// POST endpoint for processing PDFs from UploadThing URLs (requires auth)
+app.post('/upload-from-url', requireAuth, express.json(), async (req, res) => {
   const startTime = Date.now();
   const { pdfUrl, chatId, fileName } = req.body;
+  const userId = req.user.uid;
 
   console.log(`[${new Date().toISOString()}] === START PDF PROCESSING ===`);
-  console.log(`ChatId: ${chatId}, FileName: ${fileName}`);
+  console.log(`UserId: ${userId}, ChatId: ${chatId}, FileName: ${fileName}`);
 
   if (!pdfUrl || !chatId) {
     console.log('[ERROR] Missing required parameters');
@@ -327,6 +411,22 @@ app.post('/upload-from-url', express.json(), async (req, res) => {
   }
 
   try {
+    // Check plan limit before processing
+    const limitCheck = await checkLimit(userId, 'documentsCount');
+    if (!limitCheck.allowed) {
+      return res.status(403).json({
+        error: `Document limit reached (${limitCheck.current}/${limitCheck.limit} this month). Upgrade to Pro for more.`,
+        limitReached: true
+      });
+    }
+
+    // Verify user owns the chat before processing
+    const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
+    const chatDoc = await chatRef.get();
+    if (!chatDoc.exists) {
+      return res.status(403).json({ error: 'Chat not found or access denied.' });
+    }
+
     // Step 1: Download PDF
     console.log(`[STEP 1] Downloading PDF from: ${pdfUrl}`);
     const response = await axios.get(pdfUrl, { 
@@ -361,7 +461,8 @@ app.post('/upload-from-url', express.json(), async (req, res) => {
       openai, 
       fileName, 
       chatId, 
-      pdfUrl
+      pdfUrl,
+      userId
     );
     
     console.log(`[STEP 3-4] ✓ Processed ${documents.length} chunks in ${Date.now() - processStart}ms`);
@@ -398,6 +499,39 @@ app.post('/upload-from-url', express.json(), async (req, res) => {
     }
     console.log(`[STEP 5] ✓ All documents stored in ${Date.now() - firestoreStart}ms`);
 
+    // Step 6: Generate suggested questions based on document content
+    let suggestedQuestions = [];
+    try {
+      const sampleContext = documents.slice(0, 5).map(d => d.chunk).join('\n\n').slice(0, 2000);
+      const suggestResponse = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{
+          role: 'user',
+          content: `Based on this document excerpt, generate exactly 4 short, specific questions a user might ask to learn more. Return ONLY a JSON array of 4 strings, no other text.\n\nExcerpt:\n${sampleContext}`
+        }],
+        max_tokens: 200,
+        temperature: 0.5
+      });
+      const content = suggestResponse.choices[0]?.message?.content?.trim();
+      if (content) {
+        try {
+          const cleaned = content.replace(/```json?\s*|\s*```/g, '').trim();
+          const parsed = JSON.parse(cleaned);
+          suggestedQuestions = Array.isArray(parsed) ? parsed.slice(0, 4).filter(q => typeof q === 'string') : [];
+        } catch (_) {
+          suggestedQuestions = [];
+        }
+      }
+      if (suggestedQuestions.length > 0) {
+        await chatRef.update({ suggestedQuestions });
+        console.log(`[STEP 6] ✓ Generated ${suggestedQuestions.length} suggested questions`);
+      }
+    } catch (suggestErr) {
+      console.warn('[STEP 6] Suggested questions generation failed:', suggestErr.message);
+    }
+
+    await incrementUsage(userId, 'documentsCount');
+
     const totalTime = Date.now() - startTime;
     console.log(`[SUCCESS] === PDF PROCESSING COMPLETE in ${totalTime}ms ===`);
     console.log(`Total chunks processed: ${documents.length}`);
@@ -407,6 +541,7 @@ app.post('/upload-from-url', express.json(), async (req, res) => {
       chunksProcessed: documents.length,
       pdfUrl: pdfUrl,
       fileName: fileName,
+      suggestedQuestions: suggestedQuestions,
       processingTimeMs: totalTime
     });
 
@@ -429,9 +564,103 @@ app.post('/upload-from-url', express.json(), async (req, res) => {
 
 // ... (rest of the code)
 
-// POST endpoint for queries (no authentication needed)
-app.post('/query', express.json(), async (req, res) => {
+// POST endpoint for streaming queries (requires auth)
+app.post('/query-stream', requireAuth, express.json(), async (req, res) => {
   const { question, chatId } = req.body;
+  const userId = req.user.uid;
+  if (!question) {
+    return res.status(400).json({ error: 'No question provided.' });
+  }
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId is required.' });
+  }
+
+  try {
+    // Check plan limit before querying
+    const limitCheck = await checkLimit(userId, 'queriesCount');
+    if (!limitCheck.allowed) {
+      res.setHeader('Content-Type', 'application/json');
+      return res.status(403).json({
+        error: `Query limit reached (${limitCheck.current}/${limitCheck.limit} this month). Upgrade to Pro for more.`,
+        limitReached: true
+      });
+    }
+
+    const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
+    const chatDoc = await chatRef.get();
+    if (!chatDoc.exists) {
+      return res.status(403).json({ error: 'Chat not found or access denied.' });
+    }
+
+    const questionEmbeddingResponse = await openai.embeddings.create({
+      model: 'text-embedding-ada-002',
+      input: question
+    });
+    const questionEmbedding = questionEmbeddingResponse.data[0].embedding;
+    const snapshot = await db.collection('documents').where('chatId', '==', chatId).get();
+    const allDocuments = snapshot.docs.map(doc => doc.data());
+    const similarities = allDocuments.map(doc => ({
+      ...doc,
+      similarity: cosineSimilarity(questionEmbedding, doc.embedding)
+    }));
+    const relevantChunks = similarities
+      .filter(doc => doc.similarity > 0.7)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5);
+    let context = "No relevant information found in documents.";
+    if (relevantChunks.length > 0) {
+      context = relevantChunks.map(doc => doc.chunk).join('\n\n');
+    }
+    const prompt = `Based on the following context, answer the question comprehensively. If the information is not available in the context, state that clearly.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer:`;
+
+    const sources = relevantChunks.map(doc => ({
+      chunk: doc.chunk,
+      source: doc.source,
+      similarity: doc.similarity,
+      pageNumber: doc.pageNumber || null
+    }));
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const stream = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 500,
+      temperature: 0.2,
+      stream: true
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        res.write(`data: ${JSON.stringify({ type: 'chunk', content })}\n\n`);
+        res.flush?.();
+      }
+    }
+
+    await incrementUsage(userId, 'queriesCount');
+
+    res.write(`data: ${JSON.stringify({ type: 'done', sources })}\n\n`);
+    res.end();
+  } catch (error) {
+    console.error('Stream query error:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: error.message });
+    }
+    res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+    res.end();
+  }
+});
+
+// POST endpoint for queries (requires auth) - non-streaming fallback
+app.post('/query', requireAuth, express.json(), async (req, res) => {
+  const { question, chatId } = req.body;
+  const userId = req.user.uid;
   if (!question) {
     return res.status(400).send('No question provided.');
   }
@@ -439,12 +668,26 @@ app.post('/query', express.json(), async (req, res) => {
     return res.status(400).send('chatId is required.');
   }
   try {
+    const limitCheck = await checkLimit(userId, 'queriesCount');
+    if (!limitCheck.allowed) {
+      return res.status(403).json({
+        error: `Query limit reached (${limitCheck.current}/${limitCheck.limit} this month). Upgrade to Pro for more.`,
+        limitReached: true
+      });
+    }
+    // Verify user owns the chat before querying
+    const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
+    const chatDoc = await chatRef.get();
+    if (!chatDoc.exists) {
+      return res.status(403).json({ error: 'Chat not found or access denied.' });
+    }
+
     const questionEmbeddingResponse = await openai.embeddings.create({
       model: 'text-embedding-ada-002',
       input: question
     });
     const questionEmbedding = questionEmbeddingResponse.data[0].embedding;
-    // Retrieve only documents from the current chatId
+    // Retrieve documents - filter by chatId (userId stored for new docs, backward compat for old)
     const snapshot = await db.collection('documents').where('chatId', '==', chatId).get();
     const allDocuments = snapshot.docs.map(doc => doc.data());
     const similarities = allDocuments.map(doc => ({
@@ -467,6 +710,7 @@ app.post('/query', express.json(), async (req, res) => {
       temperature: 0.2
     });
     const answer = chatResponse.choices[0].message.content;
+    await incrementUsage(userId, 'queriesCount');
     res.send({
       question,
       answer,
@@ -479,6 +723,80 @@ app.post('/query', express.json(), async (req, res) => {
     });
   } catch (error) {
     res.status(500).send(`Error processing query: ${error.message}`);
+  }
+});
+
+// POST endpoint - Upgrade plan (demo: sets to Pro for testing)
+app.post('/api/plan', requireAuth, express.json(), async (req, res) => {
+  const userId = req.user.uid;
+  const { plan } = req.body;
+  if (!['free', 'pro'].includes(plan)) {
+    return res.status(400).json({ error: 'Invalid plan. Use "free" or "pro".' });
+  }
+  try {
+    const profileRef = db.doc(`users/${userId}/profile/account`);
+    await profileRef.set({ plan, updatedAt: new Date().toISOString() }, { merge: true });
+    res.json({ plan, message: `Plan updated to ${plan}.` });
+  } catch (error) {
+    console.error('Plan update error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET endpoint - Fetch user usage stats and plan (requires auth)
+app.get('/api/usage', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  try {
+    const [plan, usage] = await Promise.all([getUserPlan(userId), getUsageWithPeriod(userId)]);
+    const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
+    res.json({
+      plan,
+      documentsCount: usage.documentsCount,
+      queriesCount: usage.queriesCount,
+      documentsLimit: limits.documents,
+      queriesLimit: limits.queries,
+      periodMonth: usage.periodMonth,
+      lastUpdated: usage.lastUpdated || null
+    });
+  } catch (error) {
+    console.error('Usage fetch error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE endpoint - Delete chat and all its RAG documents (requires auth)
+app.delete('/api/chats/:chatId', requireAuth, express.json(), async (req, res) => {
+  const { chatId } = req.params;
+  const userId = req.user.uid;
+
+  if (!chatId) {
+    return res.status(400).json({ error: 'chatId is required.' });
+  }
+
+  try {
+    // Verify user owns the chat
+    const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
+    const chatDoc = await chatRef.get();
+    if (!chatDoc.exists) {
+      return res.status(404).json({ error: 'Chat not found or access denied.' });
+    }
+
+    // Delete all RAG documents (chunks) with this chatId (Firestore batch limit: 500)
+    const docsSnapshot = await db.collection('documents').where('chatId', '==', chatId).get();
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < docsSnapshot.docs.length; i += BATCH_SIZE) {
+      const batch = db.batch();
+      docsSnapshot.docs.slice(i, i + BATCH_SIZE).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+
+    // Delete the chat document
+    await chatRef.delete();
+
+    res.json({ message: 'Chat and documents deleted successfully.' });
+  } catch (error) {
+    console.error('Delete chat error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

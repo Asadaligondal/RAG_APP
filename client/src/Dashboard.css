@@ -280,6 +280,37 @@
 .empty-chat-state p {
   font-size: 16px;
   color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.suggested-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  max-width: 600px;
+  margin-top: 8px;
+}
+
+.suggestion-chip {
+  padding: 12px 20px;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+  border-radius: 24px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.suggestion-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.suggestion-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Message Rows - ChatGPT Style */
@@ -386,6 +417,17 @@
     transform: translateY(-10px);
     opacity: 1;
   }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  animation: blink 1s step-end infinite;
+  margin-left: 2px;
+  color: var(--accent-link);
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
 }
 
 /* Chat Input - ChatGPT Style */
