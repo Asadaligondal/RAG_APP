@@ -4,7 +4,6 @@ import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
 import Sidebar from './Sidebar';
-import ThemeToggle from './ThemeToggle';
 import EnhancedPDFViewer from './components/EnhancedPDFViewer';
 import { useUploadThing } from './utils/uploadthing';
 import { 
@@ -313,7 +312,6 @@ function Dashboard() {
 
   return (
     <div className="dashboard-layout">
-      <ThemeToggle />
       <Sidebar 
         currentChatId={currentChatId}
         onSelectChat={handleSelectChat}
