@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useCommandPalette } from './CommandPaletteContext';
 import api, { streamQuery } from './utils/api';
 import { useAuth } from './AuthContext';
 import { db } from './firebase';
-import { Paperclip, Search, MessageCircle, Lightbulb, Zap, FileText, Plus, Upload, Send, Bot, ChevronDown, ChevronRight } from 'lucide-react';
+import { Paperclip, Search, MessageCircle, Lightbulb, Zap, FileText, Plus, Upload, Send, Bot, ChevronDown, ChevronRight, Download } from 'lucide-react';
 import Sidebar from './Sidebar';
 import EnhancedPDFViewer from './components/EnhancedPDFViewer';
 import { useUploadThing } from './utils/uploadthing';
@@ -56,6 +57,7 @@ const SourcesSection = ({ sources }) => {
 
 function Dashboard() {
   const { user } = useAuth();
+  const { registerNewChat } = useCommandPalette();
   const navigate = useNavigate();
   const location = useLocation();
   const [files, setFiles] = useState([]);
@@ -323,12 +325,37 @@ function Dashboard() {
     setCurrentChatId(chatId);
   };
 
-  const handleNewChat = () => {
+  const handleNewChat = useCallback(() => {
     setCurrentChatId(null);
     setChat([]);
     setFiles([]);
     setUploadStatus('');
     setSuggestedQuestions([]);
+  }, []);
+
+  useEffect(() => {
+    registerNewChat(handleNewChat);
+  }, [registerNewChat, handleNewChat]);
+
+  const handleExportChat = () => {
+    if (chat.length === 0) return;
+    const lines = chat.flatMap((entry) => [
+      'You:',
+      entry.question,
+      '',
+      'DocuBrain:',
+      entry.answer,
+      '',
+      '---',
+      '',
+    ]);
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `docubrain-chat-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handlePreviewPDF = async () => {
@@ -373,7 +400,6 @@ function Dashboard() {
         <div className="landing-screen">
           <div className="landing-content">
             <div className="landing-center">
-              <div className="logo">DocuBrain</div>
               <h1 className="landing-title">What can I help with?</h1>
               
               <div className="input-section">
@@ -520,6 +546,11 @@ function Dashboard() {
               <button onClick={handlePreviewPDF} className="preview-pdf-btn">
                 <FileText size={16} /> Preview PDF
               </button>
+              {chat.length > 0 && (
+                <button onClick={handleExportChat} className="preview-pdf-btn export-chat-btn">
+                  <Download size={16} /> Export Chat
+                </button>
+              )}
             </div>
           )}
           

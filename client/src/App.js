@@ -1,6 +1,9 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
+import { CommandPaletteProvider } from './CommandPaletteContext';
+import CommandPalette from './components/CommandPalette';
+import CommandPaletteTrigger from './CommandPaletteTrigger';
 import LandingPage from './LandingPage';
 import AppLayout from './AppLayout';
 import Dashboard from './Dashboard';
@@ -13,6 +16,7 @@ import './App.css';
 function App() {
   return (
     <AuthProvider>
+      <CommandPaletteProvider>
         <Router>
           <Routes>
             <Route path="/" element={<LandingPage />} />
@@ -25,7 +29,10 @@ function App() {
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          <CommandPaletteTrigger />
+          <CommandPalette />
         </Router>
+      </CommandPaletteProvider>
       </AuthProvider>
   );
 }

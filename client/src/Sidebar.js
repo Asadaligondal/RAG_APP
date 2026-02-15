@@ -12,7 +12,7 @@ import {
 import './Sidebar.css';
 
 function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggleCollapse }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [chats, setChats] = useState([]);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -48,14 +48,6 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
   return (
     <>
       {/* Mobile hamburger button */}
@@ -74,7 +66,7 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
         </button>
         
         <div className="sidebar-header">
-          <h2 className="sidebar-logo">{isCollapsed ? 'DB' : 'DocuBrain'}</h2>
+          <span className="sidebar-section-label">{isCollapsed ? '' : 'Chats'}</span>
           <button className="new-chat-btn" onClick={onNewChat}>
             <Plus size={18} /> {!isCollapsed && 'New Chat'}
           </button>
@@ -107,20 +99,6 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
               </div>
             ))
           )}
-        </div>
-
-        <div className="sidebar-footer">
-          <div className="user-profile">
-            <div className="user-avatar">
-              {user?.email?.charAt(0).toUpperCase()}
-            </div>
-            <div className="user-details">
-              <div className="user-email">{user?.email}</div>
-              <button onClick={handleLogout} className="logout-link">
-                Logout
-              </button>
-            </div>
-          </div>
         </div>
       </aside>
 
