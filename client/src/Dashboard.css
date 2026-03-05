@@ -340,11 +340,43 @@
   min-width: 0;
 }
 
+.message-author-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
 .message-author {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
-  margin-bottom: 6px;
+}
+
+.message-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.msg-action-btn {
+  padding: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.msg-action-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.msg-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .message-body {

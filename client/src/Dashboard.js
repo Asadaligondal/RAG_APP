@@ -3,8 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useCommandPalette } from './CommandPaletteContext';
 import api, { streamQuery } from './utils/api';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 import { db } from './firebase';
-import { Paperclip, Search, MessageCircle, Lightbulb, Zap, FileText, Plus, Upload, Send, Bot, ChevronDown, ChevronRight, Download } from 'lucide-react';
+import { Paperclip, Search, MessageCircle, Lightbulb, Zap, FileText, Plus, Upload, Send, Bot, ChevronDown, ChevronRight, Download, Copy, RefreshCw } from 'lucide-react';
 import Sidebar from './Sidebar';
 import EnhancedPDFViewer from './components/EnhancedPDFViewer';
 import { useUploadThing } from './utils/uploadthing';
@@ -57,13 +58,13 @@ const SourcesSection = ({ sources }) => {
 
 function Dashboard() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const { registerNewChat } = useCommandPalette();
   const navigate = useNavigate();
   const location = useLocation();
   const [files, setFiles] = useState([]);
   const [question, setQuestion] = useState('');
   const [chat, setChat] = useState([]);
-  const [uploadStatus, setUploadStatus] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentChatId, setCurrentChatId] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -83,7 +84,7 @@ function Dashboard() {
     },
     onUploadError: (error) => {
       console.error("Upload error:", error);
-      setUploadStatus(`Upload error: ${error.message}`);
+      toast(`Upload error: ${error.message}`, 'error');
       setLoading(false);
     },
   });
@@ -156,7 +157,9 @@ function Dashboard() {
             question: userMsg.text,
             answer: aiMsg?.text || 'Thinking...',
             sources: aiMsg?.sources || [],
-            loading: !aiMsg
+            loading: !aiMsg,
+            userMsgId: userMsg.id,
+            aiMsgId: aiMsg?.id
           });
           
           // Collect questions with sources for PDF viewer
@@ -180,12 +183,12 @@ function Dashboard() {
   const handleFileUpload = async (e) => {
     e.preventDefault();
     if (files.length === 0) {
-      setUploadStatus('Please select files to upload.');
+      toast('Please select files to upload.', 'info');
       return;
     }
 
     setLoading(true);
-    setUploadStatus('Uploading to UploadThing...');
+    toast('Uploading to UploadThing...', 'info');
     
     // Create a new chat with metadata first
     const newChatId = `chat_${Date.now()}`;
@@ -202,7 +205,7 @@ function Dashboard() {
       const uploadedFile = uploadedFiles[0];
       const pdfUrl = uploadedFile.url;
 
-      setUploadStatus('Processing PDF...');
+      toast('Processing PDF...', 'info');
 
       // Create chat document with pdfUrl
       await setDoc(doc(db, 'users', user.uid, 'chats', newChatId), {
@@ -219,8 +222,9 @@ function Dashboard() {
         fileName: fileName
       });
       
-      setUploadStatus(
-        `Uploaded ${files.length} file(s). ${response.data.chunksProcessed} chunks processed and stored.`
+      toast(
+        `Uploaded ${files.length} file(s). ${response.data.chunksProcessed} chunks processed and stored.`,
+        'success'
       );
       setFiles([]);
       setCurrentChatId(newChatId);
@@ -230,7 +234,7 @@ function Dashboard() {
     } catch (error) {
       console.error("Upload error:", error);
       const errMsg = error.response?.data?.error || error.response?.data || error.message;
-      setUploadStatus(`Error: ${errMsg}`);
+      toast(`Error: ${errMsg}`, 'error');
       if (error.response?.status === 403 && error.response?.data?.limitReached) {
         try {
           await deleteDoc(doc(db, 'users', user.uid, 'chats', newChatId));
@@ -296,6 +300,30 @@ function Dashboard() {
     }
   };
 
+  const handleRegenerate = async (entry, index) => {
+    if (!currentChatId || loading || entry.loading || !entry.userMsgId) return;
+    const messagesRef = collection(db, 'users', user.uid, 'chats', currentChatId, 'messages');
+    try {
+      if (entry.aiMsgId) {
+        await deleteDoc(doc(db, 'users', user.uid, 'chats', currentChatId, 'messages', entry.aiMsgId));
+      }
+      await deleteDoc(doc(db, 'users', user.uid, 'chats', currentChatId, 'messages', entry.userMsgId));
+      await submitQuestion(entry.question);
+    } catch (err) {
+      console.error('Regenerate error:', err);
+      toast('Failed to regenerate. Please try again.', 'error');
+    }
+  };
+
+  const handleCopyMessage = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('Copied to clipboard', 'success');
+    } catch {
+      toast('Failed to copy', 'error');
+    }
+  };
+
   const handleQuery = (e) => {
     e.preventDefault();
     submitQuestion(question);
@@ -317,7 +345,7 @@ function Dashboard() {
       setChat([]);
     } catch (error) {
       console.error('Error clearing chat:', error);
-      alert('Failed to clear chat. Please try again.');
+      toast('Failed to clear chat. Please try again.', 'error');
     }
   };
 
@@ -329,7 +357,6 @@ function Dashboard() {
     setCurrentChatId(null);
     setChat([]);
     setFiles([]);
-    setUploadStatus('');
     setSuggestedQuestions([]);
   }, []);
 
@@ -339,6 +366,7 @@ function Dashboard() {
 
   const handleExportChat = () => {
     if (chat.length === 0) return;
+    toast('Export started', 'success');
     const lines = chat.flatMap((entry) => [
       'You:',
       entry.question,
@@ -360,7 +388,7 @@ function Dashboard() {
 
   const handlePreviewPDF = async () => {
     if (!currentChatId) {
-      alert('No chat selected');
+      toast('No chat selected', 'info');
       return;
     }
 
@@ -374,14 +402,14 @@ function Dashboard() {
           setCurrentPDFTitle(chatData.title || 'PDF Preview');
           setShowPDFViewer(true);
         } else {
-          alert('No PDF file associated with this chat');
+          toast('No PDF file associated with this chat', 'info');
         }
       } else {
-        alert('Chat not found');
+        toast('Chat not found', 'error');
       }
     } catch (error) {
       console.error('Error loading PDF:', error);
-      alert('Failed to load PDF preview');
+      toast('Failed to load PDF preview', 'error');
     }
   };
 
@@ -458,7 +486,6 @@ function Dashboard() {
               </div>
             </div>
             
-            {uploadStatus && <div className="status-message">{uploadStatus}</div>}
           </div>
         </div>
       ) : (
@@ -509,7 +536,30 @@ function Dashboard() {
                           <Bot size={20} />
                         </div>
                         <div className="message-text">
-                          <div className="message-author">DocuBrain</div>
+                          <div className="message-author-row">
+                            <span className="message-author">DocuBrain</span>
+                            {!entry.loading && (
+                              <div className="message-actions">
+                                <button
+                                  className="msg-action-btn"
+                                  onClick={() => handleCopyMessage(entry.answer)}
+                                  title="Copy"
+                                >
+                                  <Copy size={14} />
+                                </button>
+                                {index === chat.length - 1 && (
+                                  <button
+                                    className="msg-action-btn"
+                                    onClick={() => handleRegenerate(entry, index)}
+                                    disabled={loading}
+                                    title="Regenerate"
+                                  >
+                                    <RefreshCw size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           {entry.loading ? (
                             <div className="message-body">
                               {streamingAnswer?.question === entry.question && streamingAnswer.answer ? (

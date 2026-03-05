@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from './utils/api';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 import { db } from './firebase';
 import { Menu, ChevronLeft, ChevronRight, Plus, FileText, Trash2 } from 'lucide-react';
 import { 
@@ -13,6 +14,7 @@ import './Sidebar.css';
 
 function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggleCollapse }) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [chats, setChats] = useState([]);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -44,7 +46,7 @@ function Sidebar({ currentChatId, onSelectChat, onNewChat, isCollapsed, onToggle
       }
     } catch (error) {
       console.error('Error deleting chat:', error);
-      alert('Failed to delete. Please try again.');
+      toast('Failed to delete. Please try again.', 'error');
     }
   };
 

@@ -2,6 +2,8 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
 import { CommandPaletteProvider } from './CommandPaletteContext';
+import { ToastProvider } from './ToastContext';
+import { ShortcutsHelpProvider } from './ShortcutsHelpContext';
 import CommandPalette from './components/CommandPalette';
 import CommandPaletteTrigger from './CommandPaletteTrigger';
 import LandingPage from './LandingPage';
@@ -12,10 +14,13 @@ import Settings from './Settings';
 import Login from './Login';
 import Signup from './Signup';
 import './App.css';
+import './Toast.css';
 
 function App() {
   return (
     <AuthProvider>
+      <ToastProvider>
+      <ShortcutsHelpProvider>
       <CommandPaletteProvider>
         <Router>
           <Routes>
@@ -33,7 +38,9 @@ function App() {
           <CommandPalette />
         </Router>
       </CommandPaletteProvider>
-      </AuthProvider>
+      </ShortcutsHelpProvider>
+      </ToastProvider>
+    </AuthProvider>
   );
 }
 
