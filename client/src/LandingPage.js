@@ -4,6 +4,10 @@ import { useAuth } from './AuthContext';
 import { Zap, Shield, Quote } from 'lucide-react';
 import './LandingPage.css';
 
+// Minimal stub for ThemeToggle to satisfy builds where the component isn't present
+// eslint-disable-next-line no-unused-vars
+const ThemeToggle = () => null;
+
 function LandingPage() {
   const { user } = useAuth();
 

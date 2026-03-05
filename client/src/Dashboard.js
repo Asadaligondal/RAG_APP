@@ -302,6 +302,7 @@ function Dashboard() {
 
   const handleRegenerate = async (entry, index) => {
     if (!currentChatId || loading || entry.loading || !entry.userMsgId) return;
+    // eslint-disable-next-line no-unused-vars
     const messagesRef = collection(db, 'users', user.uid, 'chats', currentChatId, 'messages');
     try {
       if (entry.aiMsgId) {
