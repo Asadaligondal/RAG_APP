@@ -9,6 +9,23 @@
   width: 100%;
 }
 
+.settings-page::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-page::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-page::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.settings-page::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
 .settings-content {
   width: 100%;
 }
