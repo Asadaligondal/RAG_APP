@@ -33,8 +33,11 @@
 .landing-logo {
   font-size: 20px;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, var(--accent-primary), #1a7fff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .landing-nav-btn {
@@ -94,11 +97,11 @@
   padding: 14px 32px;
   font-size: 16px;
   font-weight: 600;
-  background: var(--accent-primary);
+  background: linear-gradient(135deg, var(--accent-primary), #0d8c6a);
   color: var(--text-inverse);
-  border-radius: 8px;
-  transition: opacity 0.2s, transform 0.2s;
-  box-shadow: 0 4px 14px var(--shadow-color);
+  border-radius: 10px;
+  transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(16, 163, 127, 0.25);
 }
 
 .landing-cta:hover {
@@ -132,13 +135,14 @@
   padding: 32px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  border-radius: 14px;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
 .landing-feature-card:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 8px 24px var(--shadow-color);
+  border-color: var(--accent-primary);
+  box-shadow: 0 8px 32px var(--shadow-color);
+  transform: translateY(-2px);
 }
 
 .landing-feature-icon {

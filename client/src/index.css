@@ -22,54 +22,56 @@ body {
 
 /* Standard Dark Theme - applies to all pages */
 :root {
-  --bg-primary: #1e1e1e;
-  --bg-secondary: #252526;
-  --bg-tertiary: #2d2d2d;
-  --bg-input: #3c3c3c;
-  --bg-hover: #383838;
-  --text-primary: #e0e0e0;
-  --text-secondary: #b0b0b0;
-  --text-tertiary: #808080;
+  --bg-primary: #212121;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #2c2c2c;
+  --bg-input: #2f2f2f;
+  --bg-hover: #343434;
+  --text-primary: #ececec;
+  --text-secondary: #a0a0a0;
+  --text-tertiary: #6b6b6b;
   --text-inverse: #ffffff;
-  --border-color: #404040;
-  --border-hover: #505050;
-  --shadow-color: rgba(0, 0, 0, 0.5);
-  --shadow-hover: rgba(0, 0, 0, 0.6);
+  --border-color: #363636;
+  --border-hover: #4a4a4a;
+  --shadow-color: rgba(0, 0, 0, 0.4);
+  --shadow-hover: rgba(0, 0, 0, 0.5);
   --accent-primary: #10a37f;
   --accent-hover: #0d8c6a;
   --accent-link: #10a37f;
-  --chip-bg: #2d2d2d;
-  --chip-border: #404040;
-  --message-user-bg: #252526;
-  --message-ai-bg: #1e1e1e;
-  --source-bg: #252526;
-  --sidebar-bg: #181818;
+  --chip-bg: #2c2c2c;
+  --chip-border: #363636;
+  --message-user-bg: #2c2c2c;
+  --message-ai-bg: #212121;
+  --source-bg: #2c2c2c;
+  --sidebar-bg: #171717;
+  --glass-border: rgba(255, 255, 255, 0.06);
 }
 
 /* Light Theme */
 [data-theme="light"] {
   --bg-primary: #ffffff;
-  --bg-secondary: #f7f7f8;
-  --bg-tertiary: #ececec;
-  --bg-input: #f0f0f0;
-  --bg-hover: #e8e8e8;
-  --text-primary: #1a1a1a;
-  --text-secondary: #555555;
-  --text-tertiary: #999999;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #f0f1f3;
+  --bg-input: #f4f4f5;
+  --bg-hover: #ececee;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
   --text-inverse: #ffffff;
-  --border-color: #d5d5d5;
-  --border-hover: #bbbbbb;
-  --shadow-color: rgba(0, 0, 0, 0.08);
-  --shadow-hover: rgba(0, 0, 0, 0.12);
+  --border-color: #e5e7eb;
+  --border-hover: #d1d5db;
+  --shadow-color: rgba(0, 0, 0, 0.06);
+  --shadow-hover: rgba(0, 0, 0, 0.1);
   --accent-primary: #10a37f;
   --accent-hover: #0d8c6a;
   --accent-link: #10a37f;
-  --chip-bg: #f0f0f0;
-  --chip-border: #d5d5d5;
-  --message-user-bg: #f7f7f8;
+  --chip-bg: #f4f4f5;
+  --chip-border: #e5e7eb;
+  --message-user-bg: #f8f9fa;
   --message-ai-bg: #ffffff;
-  --source-bg: #f7f7f8;
-  --sidebar-bg: #f0f0f0;
+  --source-bg: #f8f9fa;
+  --sidebar-bg: #f0f2f5;
+  --glass-border: rgba(0, 0, 0, 0.06);
 }
 
 code {
