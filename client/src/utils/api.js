@@ -49,7 +49,7 @@ api.interceptors.response.use(
 /**
  * Stream a query response - calls onChunk for each text chunk, onDone with sources
  */
-export async function streamQuery(question, chatId, { onChunk, onDone, onError }) {
+export async function streamQuery(question, chatId, { model, onChunk, onDone, onError }) {
   const token = await getAuthToken();
   const url = `${API_URL}/query-stream`;
   const response = await fetch(url, {
@@ -58,7 +58,7 @@ export async function streamQuery(question, chatId, { onChunk, onDone, onError }
       'Content-Type': 'application/json',
       ...(token && { Authorization: `Bearer ${token}` }),
     },
-    body: JSON.stringify({ question, chatId }),
+    body: JSON.stringify({ question, chatId, model: model || undefined }),
   });
 
   if (!response.ok) {

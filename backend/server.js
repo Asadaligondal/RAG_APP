@@ -5,6 +5,7 @@ const fs = require('fs');
 const pdf = require('pdf-parse');
 const { OpenAI } = require('openai');
 const axios = require('axios');
+const crypto = require('crypto');
 const { createRouteHandler } = require("uploadthing/express");
 const { uploadRouter } = require("./uploadthing");
 require('dotenv').config(); // Make sure your .env file has OPENAI_API_KEY
@@ -299,6 +300,149 @@ function cosineSimilarity(vecA, vecB) {
   return dotProduct / (normA * normB);
 }
 
+// --- Smart Sentence-Aware Chunking ---
+function smartSplitText(text, chunkSize = 500, chunkOverlap = 100) {
+  const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text];
+  const chunks = [];
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if ((currentChunk + sentence).length > chunkSize && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      const words = currentChunk.split(' ');
+      const overlapWords = words.slice(-Math.ceil(chunkOverlap / 5));
+      currentChunk = overlapWords.join(' ') + ' ' + sentence;
+    } else {
+      currentChunk += sentence;
+    }
+  }
+  if (currentChunk.trim().length > 0) {
+    chunks.push(currentChunk.trim());
+  }
+  return chunks;
+}
+
+// --- Re-ranking: uses LLM to score chunk relevance ---
+async function rerankChunks(question, chunks, openaiClient, topK = 5) {
+  if (chunks.length <= topK) return chunks;
+  try {
+    const chunkDescs = chunks.slice(0, 15).map((c, i) => `Chunk ${i + 1}: "${c.chunk.slice(0, 200)}"`).join('\n');
+    const prompt = `Given the question: "${question}"\n\nRate the relevance of each chunk on a scale of 0-10. Return ONLY a JSON array of integer scores in the same order, nothing else.\n\n${chunkDescs}`;
+    const response = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 200,
+      temperature: 0
+    });
+    const content = response.choices[0]?.message?.content?.trim();
+    const cleaned = content.replace(/```json?\s*|\s*```/g, '').trim();
+    const scores = JSON.parse(cleaned);
+    if (Array.isArray(scores)) {
+      return chunks
+        .slice(0, scores.length)
+        .map((chunk, i) => ({ ...chunk, rerankScore: scores[i] || 0 }))
+        .sort((a, b) => b.rerankScore - a.rerankScore)
+        .slice(0, topK);
+    }
+  } catch (e) {
+    console.warn('[RERANK] Failed, using similarity order:', e.message);
+  }
+  return chunks.slice(0, topK);
+}
+
+// --- Query Cache (in-memory LRU) ---
+const queryCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_SIZE = 500;
+
+function getCacheKey(question, chatId, model) {
+  return `${chatId}:${model}:${question.trim().toLowerCase()}`;
+}
+function getCachedResult(key) {
+  const cached = queryCache.get(key);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
+  queryCache.delete(key);
+  return null;
+}
+function setCachedResult(key, data) {
+  if (queryCache.size > MAX_CACHE_SIZE) {
+    const oldest = queryCache.keys().next().value;
+    queryCache.delete(oldest);
+  }
+  queryCache.set(key, { data, ts: Date.now() });
+}
+
+// --- Rate Limiting (per-user, in-memory) ---
+const rateLimitMap = new Map();
+function rateLimitMiddleware(maxRequests = 30, windowMs = 60000) {
+  return (req, res, next) => {
+    const key = req.user?.uid || req.ip;
+    const now = Date.now();
+    if (!rateLimitMap.has(key)) rateLimitMap.set(key, []);
+    const timestamps = rateLimitMap.get(key).filter(t => t > now - windowMs);
+    rateLimitMap.set(key, timestamps);
+    if (timestamps.length >= maxRequests) {
+      return res.status(429).json({ error: 'Too many requests. Please slow down and retry in a minute.' });
+    }
+    timestamps.push(now);
+    res.setHeader('X-RateLimit-Limit', maxRequests);
+    res.setHeader('X-RateLimit-Remaining', maxRequests - timestamps.length);
+    next();
+  };
+}
+
+// --- Supported Models ---
+const SUPPORTED_MODELS = {
+  'gpt-4o': { label: 'GPT-4o', provider: 'openai' },
+  'gpt-4o-mini': { label: 'GPT-4o Mini', provider: 'openai' },
+  'gpt-3.5-turbo': { label: 'GPT-3.5 Turbo', provider: 'openai' },
+};
+const SUPPORTED_EMBEDDING_MODELS = {
+  'text-embedding-ada-002': { label: 'Ada 002', dimensions: 1536 },
+  'text-embedding-3-small': { label: 'Embedding 3 Small', dimensions: 1536 },
+  'text-embedding-3-large': { label: 'Embedding 3 Large', dimensions: 3072 },
+};
+const DEFAULT_LLM = 'gpt-4o';
+const DEFAULT_EMBEDDING = 'text-embedding-ada-002';
+
+// --- Webhook Dispatcher ---
+async function dispatchWebhooks(userId, event, payload) {
+  try {
+    const snapshot = await db.collection('webhooks').where('userId', '==', userId).where('events', 'array-contains', event).get();
+    if (snapshot.empty) return;
+    const promises = snapshot.docs.map(async (doc) => {
+      const wh = doc.data();
+      try {
+        await axios.post(wh.url, { event, timestamp: new Date().toISOString(), data: payload }, { timeout: 5000, headers: { 'X-Webhook-Secret': wh.secret || '' } });
+      } catch (e) {
+        console.warn(`[WEBHOOK] Failed to deliver to ${wh.url}:`, e.message);
+      }
+    });
+    await Promise.allSettled(promises);
+  } catch (e) {
+    console.warn('[WEBHOOK] Dispatch error:', e.message);
+  }
+}
+
+// --- API Key Authentication Middleware ---
+async function requireApiKey(req, res, next) {
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey) return res.status(401).json({ error: 'Missing X-API-Key header.' });
+  try {
+    const snapshot = await db.collection('api_keys').where('key', '==', apiKey).limit(1).get();
+    if (snapshot.empty) return res.status(401).json({ error: 'Invalid API key.' });
+    const keyDoc = snapshot.docs[0].data();
+    if (keyDoc.revoked) return res.status(401).json({ error: 'API key has been revoked.' });
+    req.user = { uid: keyDoc.userId };
+    req.apiKeyId = snapshot.docs[0].id;
+    // Log usage
+    await db.collection('api_keys').doc(snapshot.docs[0].id).update({ lastUsed: new Date().toISOString(), usageCount: FieldValue.increment(1) });
+    next();
+  } catch (e) {
+    return res.status(500).json({ error: 'API key verification failed.' });
+  }
+}
+
 // --- Routes ---
 
 app.get('/', (req, res) => {
@@ -532,6 +676,9 @@ app.post('/upload-from-url', requireAuth, express.json(), async (req, res) => {
 
     await incrementUsage(userId, 'documentsCount');
 
+    // Dispatch webhook for document upload
+    dispatchWebhooks(userId, 'document.uploaded', { chatId, fileName, chunksProcessed: documents.length, pdfUrl });
+
     const totalTime = Date.now() - startTime;
     console.log(`[SUCCESS] === PDF PROCESSING COMPLETE in ${totalTime}ms ===`);
     console.log(`Total chunks processed: ${documents.length}`);
@@ -564,10 +711,11 @@ app.post('/upload-from-url', requireAuth, express.json(), async (req, res) => {
 
 // ... (rest of the code)
 
-// POST endpoint for streaming queries (requires auth)
-app.post('/query-stream', requireAuth, express.json(), async (req, res) => {
-  const { question, chatId } = req.body;
+// POST endpoint for streaming queries (requires auth + rate limit)
+app.post('/query-stream', requireAuth, rateLimitMiddleware(30, 60000), express.json(), async (req, res) => {
+  const { question, chatId, model, enableReranking } = req.body;
   const userId = req.user.uid;
+  const selectedModel = (model && SUPPORTED_MODELS[model]) ? model : DEFAULT_LLM;
   if (!question) {
     return res.status(400).json({ error: 'No question provided.' });
   }
@@ -593,7 +741,7 @@ app.post('/query-stream', requireAuth, express.json(), async (req, res) => {
     }
 
     const questionEmbeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-ada-002',
+      model: DEFAULT_EMBEDDING,
       input: question
     });
     const questionEmbedding = questionEmbeddingResponse.data[0].embedding;
@@ -603,10 +751,27 @@ app.post('/query-stream', requireAuth, express.json(), async (req, res) => {
       ...doc,
       similarity: cosineSimilarity(questionEmbedding, doc.embedding)
     }));
-    const relevantChunks = similarities
-      .filter(doc => doc.similarity > 0.7)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 5);
+
+    // Hybrid search: keyword + semantic
+    const keywords = question.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const scoredChunks = similarities.map(doc => {
+      const keywordHits = keywords.filter(kw => doc.chunk.toLowerCase().includes(kw)).length;
+      const keywordBoost = keywordHits * 0.05;
+      return { ...doc, hybridScore: doc.similarity + keywordBoost };
+    });
+
+    let relevantChunks = scoredChunks
+      .filter(doc => doc.hybridScore > 0.65)
+      .sort((a, b) => b.hybridScore - a.hybridScore)
+      .slice(0, 10);
+
+    // Re-rank if enabled
+    if (enableReranking !== false && relevantChunks.length > 3) {
+      relevantChunks = await rerankChunks(question, relevantChunks, openai, 5);
+    } else {
+      relevantChunks = relevantChunks.slice(0, 5);
+    }
+
     let context = "No relevant information found in documents.";
     if (relevantChunks.length > 0) {
       context = relevantChunks.map(doc => doc.chunk).join('\n\n');
@@ -617,7 +782,8 @@ app.post('/query-stream', requireAuth, express.json(), async (req, res) => {
       chunk: doc.chunk,
       source: doc.source,
       similarity: doc.similarity,
-      pageNumber: doc.pageNumber || null
+      pageNumber: doc.pageNumber || null,
+      rerankScore: doc.rerankScore || null
     }));
 
     // Set SSE headers
@@ -628,22 +794,37 @@ app.post('/query-stream', requireAuth, express.json(), async (req, res) => {
     res.flushHeaders();
 
     const stream = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: selectedModel,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 500,
       temperature: 0.2,
       stream: true
     });
 
+    let fullAnswer = '';
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;
       if (content) {
+        fullAnswer += content;
         res.write(`data: ${JSON.stringify({ type: 'chunk', content })}\n\n`);
         res.flush?.();
       }
     }
 
     await incrementUsage(userId, 'queriesCount');
+
+    // Log query for analytics
+    try {
+      await db.collection('query_logs').add({
+        userId, chatId, question, model: selectedModel,
+        sourcesCount: sources.length, answerLength: fullAnswer.length,
+        reranked: enableReranking !== false,
+        createdAt: new Date().toISOString()
+      });
+    } catch (_) {}
+
+    // Dispatch webhook
+    dispatchWebhooks(userId, 'query.completed', { chatId, question, model: selectedModel, sourcesCount: sources.length });
 
     res.write(`data: ${JSON.stringify({ type: 'done', sources })}\n\n`);
     res.end();
@@ -658,9 +839,10 @@ app.post('/query-stream', requireAuth, express.json(), async (req, res) => {
 });
 
 // POST endpoint for queries (requires auth) - non-streaming fallback
-app.post('/query', requireAuth, express.json(), async (req, res) => {
-  const { question, chatId } = req.body;
+app.post('/query', requireAuth, rateLimitMiddleware(30, 60000), express.json(), async (req, res) => {
+  const { question, chatId, model, enableReranking } = req.body;
   const userId = req.user.uid;
+  const selectedModel = (model && SUPPORTED_MODELS[model]) ? model : DEFAULT_LLM;
   if (!question) {
     return res.status(400).send('No question provided.');
   }
@@ -668,6 +850,13 @@ app.post('/query', requireAuth, express.json(), async (req, res) => {
     return res.status(400).send('chatId is required.');
   }
   try {
+    // Check cache first
+    const cacheKey = getCacheKey(question, chatId, selectedModel);
+    const cached = getCachedResult(cacheKey);
+    if (cached) {
+      return res.json({ ...cached, fromCache: true });
+    }
+
     const limitCheck = await checkLimit(userId, 'queriesCount');
     if (!limitCheck.allowed) {
       return res.status(403).json({
@@ -675,7 +864,6 @@ app.post('/query', requireAuth, express.json(), async (req, res) => {
         limitReached: true
       });
     }
-    // Verify user owns the chat before querying
     const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
     const chatDoc = await chatRef.get();
     if (!chatDoc.exists) {
@@ -683,44 +871,76 @@ app.post('/query', requireAuth, express.json(), async (req, res) => {
     }
 
     const questionEmbeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-ada-002',
+      model: DEFAULT_EMBEDDING,
       input: question
     });
     const questionEmbedding = questionEmbeddingResponse.data[0].embedding;
-    // Retrieve documents - filter by chatId (userId stored for new docs, backward compat for old)
     const snapshot = await db.collection('documents').where('chatId', '==', chatId).get();
     const allDocuments = snapshot.docs.map(doc => doc.data());
     const similarities = allDocuments.map(doc => ({
       ...doc,
       similarity: cosineSimilarity(questionEmbedding, doc.embedding)
     }));
-    const relevantChunks = similarities
-      .filter(doc => doc.similarity > 0.7)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 5);
+
+    // Hybrid search
+    const keywords = question.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const scoredChunks = similarities.map(doc => {
+      const keywordHits = keywords.filter(kw => doc.chunk.toLowerCase().includes(kw)).length;
+      return { ...doc, hybridScore: doc.similarity + keywordHits * 0.05 };
+    });
+
+    let relevantChunks = scoredChunks
+      .filter(doc => doc.hybridScore > 0.65)
+      .sort((a, b) => b.hybridScore - a.hybridScore)
+      .slice(0, 10);
+
+    if (enableReranking !== false && relevantChunks.length > 3) {
+      relevantChunks = await rerankChunks(question, relevantChunks, openai, 5);
+    } else {
+      relevantChunks = relevantChunks.slice(0, 5);
+    }
+
     let context = "No relevant information found in documents.";
     if (relevantChunks.length > 0) {
       context = relevantChunks.map(doc => doc.chunk).join('\n\n');
     }
     const prompt = `Based on the following context, answer the question comprehensively. If the information is not available in the context, state that clearly.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer:`;
     const chatResponse = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: selectedModel,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 500,
       temperature: 0.2
     });
     const answer = chatResponse.choices[0].message.content;
     await incrementUsage(userId, 'queriesCount');
-    res.send({
+
+    const result = {
       question,
       answer,
+      model: selectedModel,
       relevantChunks: relevantChunks.map(doc => ({
         chunk: doc.chunk,
         source: doc.source,
         similarity: doc.similarity,
         pageNumber: doc.pageNumber || null
       }))
-    });
+    };
+
+    // Cache the result
+    setCachedResult(cacheKey, result);
+
+    // Log query
+    try {
+      await db.collection('query_logs').add({
+        userId, chatId, question, model: selectedModel,
+        sourcesCount: relevantChunks.length, answerLength: answer.length,
+        reranked: enableReranking !== false,
+        createdAt: new Date().toISOString()
+      });
+    } catch (_) {}
+
+    dispatchWebhooks(userId, 'query.completed', { chatId, question, model: selectedModel });
+    res.json(result);
   } catch (error) {
     res.status(500).send(`Error processing query: ${error.message}`);
   }
@@ -798,6 +1018,293 @@ app.delete('/api/chats/:chatId', requireAuth, express.json(), async (req, res) =
     console.error('Delete chat error:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// ========================
+// DOCUMENT MANAGEMENT APIs
+// ========================
+
+// PATCH - Add/remove tags on a chat/document
+app.patch('/api/chats/:chatId/tags', requireAuth, express.json(), async (req, res) => {
+  const { chatId } = req.params;
+  const { tags } = req.body; // array of strings
+  const userId = req.user.uid;
+  if (!Array.isArray(tags)) return res.status(400).json({ error: 'tags must be an array of strings.' });
+  try {
+    const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
+    const chatDoc = await chatRef.get();
+    if (!chatDoc.exists) return res.status(404).json({ error: 'Chat not found.' });
+    const sanitized = tags.filter(t => typeof t === 'string').map(t => t.trim().toLowerCase()).filter(Boolean).slice(0, 20);
+    await chatRef.update({ tags: sanitized, updatedAt: new Date().toISOString() });
+    res.json({ tags: sanitized });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET - Search documents (full-text search across user's chats)
+app.get('/api/documents/search', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  const q = (req.query.q || '').trim().toLowerCase();
+  const tag = (req.query.tag || '').trim().toLowerCase();
+  if (!q && !tag) return res.status(400).json({ error: 'Provide q (search query) or tag parameter.' });
+  try {
+    const chatsRef = db.collection(`users/${userId}/chats`);
+    const snapshot = await chatsRef.orderBy('createdAt', 'desc').get();
+    let results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (q) {
+      results = results.filter(chat => (chat.title || '').toLowerCase().includes(q));
+    }
+    if (tag) {
+      results = results.filter(chat => (chat.tags || []).includes(tag));
+    }
+    res.json({ results: results.slice(0, 50) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET - Document detail with chunk count
+app.get('/api/chats/:chatId/details', requireAuth, async (req, res) => {
+  const { chatId } = req.params;
+  const userId = req.user.uid;
+  try {
+    const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
+    const chatDoc = await chatRef.get();
+    if (!chatDoc.exists) return res.status(404).json({ error: 'Chat not found.' });
+    const chunksSnap = await db.collection('documents').where('chatId', '==', chatId).get();
+    const data = chatDoc.data();
+    res.json({
+      id: chatId,
+      title: data.title,
+      tags: data.tags || [],
+      pdfUrl: data.pdfUrl || null,
+      createdAt: data.createdAt,
+      chunksCount: chunksSnap.size,
+      suggestedQuestions: data.suggestedQuestions || []
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================
+// FEEDBACK & ANALYTICS APIs
+// ========================
+
+// POST - Submit feedback on an AI message
+app.post('/api/feedback', requireAuth, express.json(), async (req, res) => {
+  const userId = req.user.uid;
+  const { chatId, messageId, rating, comment } = req.body; // rating: 'up' | 'down'
+  if (!chatId || !messageId || !['up', 'down'].includes(rating)) {
+    return res.status(400).json({ error: 'chatId, messageId, and rating (up/down) are required.' });
+  }
+  try {
+    await db.collection('feedback').add({
+      userId, chatId, messageId, rating,
+      comment: (comment || '').slice(0, 500),
+      createdAt: new Date().toISOString()
+    });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET - Get feedback for a chat
+app.get('/api/feedback/:chatId', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  const { chatId } = req.params;
+  try {
+    const snapshot = await db.collection('feedback').where('userId', '==', userId).where('chatId', '==', chatId).get();
+    const feedbacks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json({ feedbacks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET - Analytics: query logs summary
+app.get('/api/analytics', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  try {
+    const logsSnap = await db.collection('query_logs').where('userId', '==', userId).orderBy('createdAt', 'desc').limit(100).get();
+    const logs = logsSnap.docs.map(doc => doc.data());
+    const feedbackSnap = await db.collection('feedback').where('userId', '==', userId).get();
+    const feedbacks = feedbackSnap.docs.map(doc => doc.data());
+    const upCount = feedbacks.filter(f => f.rating === 'up').length;
+    const downCount = feedbacks.filter(f => f.rating === 'down').length;
+    res.json({
+      totalQueries: logs.length,
+      avgSourcesPerQuery: logs.length > 0 ? (logs.reduce((s, l) => s + (l.sourcesCount || 0), 0) / logs.length).toFixed(1) : 0,
+      modelsUsed: [...new Set(logs.map(l => l.model))],
+      feedbackSummary: { up: upCount, down: downCount, total: upCount + downCount },
+      recentQueries: logs.slice(0, 20).map(l => ({ question: l.question, model: l.model, sourcesCount: l.sourcesCount, createdAt: l.createdAt }))
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================
+// API KEY MANAGEMENT
+// ========================
+
+// POST - Generate a new API key
+app.post('/api/keys', requireAuth, express.json(), async (req, res) => {
+  const userId = req.user.uid;
+  const { name } = req.body;
+  try {
+    // Limit to 5 active keys per user
+    const existing = await db.collection('api_keys').where('userId', '==', userId).where('revoked', '==', false).get();
+    if (existing.size >= 5) return res.status(400).json({ error: 'Maximum 5 active API keys.' });
+    const key = 'db_' + crypto.randomBytes(32).toString('hex');
+    const docRef = await db.collection('api_keys').add({
+      userId, key, name: (name || 'Untitled Key').slice(0, 50),
+      revoked: false, usageCount: 0,
+      createdAt: new Date().toISOString(), lastUsed: null
+    });
+    res.json({ id: docRef.id, key, name: (name || 'Untitled Key').slice(0, 50) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET - List API keys (masked)
+app.get('/api/keys', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  try {
+    const snapshot = await db.collection('api_keys').where('userId', '==', userId).get();
+    const keys = snapshot.docs.map(doc => {
+      const d = doc.data();
+      return {
+        id: doc.id, name: d.name,
+        keyPreview: d.key.slice(0, 7) + '...' + d.key.slice(-4),
+        revoked: d.revoked, usageCount: d.usageCount,
+        createdAt: d.createdAt, lastUsed: d.lastUsed
+      };
+    });
+    res.json({ keys });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE - Revoke an API key
+app.delete('/api/keys/:keyId', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  const { keyId } = req.params;
+  try {
+    const docRef = db.collection('api_keys').doc(keyId);
+    const doc = await docRef.get();
+    if (!doc.exists || doc.data().userId !== userId) return res.status(404).json({ error: 'Key not found.' });
+    await docRef.update({ revoked: true });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================
+// EXTERNAL API (API-Key auth)
+// ========================
+
+// POST - External query (for third-party integrations)
+app.post('/api/v1/query', requireApiKey, rateLimitMiddleware(20, 60000), express.json(), async (req, res) => {
+  const { question, chatId, model } = req.body;
+  const userId = req.user.uid;
+  const selectedModel = (model && SUPPORTED_MODELS[model]) ? model : DEFAULT_LLM;
+  if (!question || !chatId) return res.status(400).json({ error: 'question and chatId are required.' });
+  try {
+    const chatRef = db.doc(`users/${userId}/chats/${chatId}`);
+    const chatDoc = await chatRef.get();
+    if (!chatDoc.exists) return res.status(404).json({ error: 'Chat not found.' });
+
+    const questionEmbeddingResponse = await openai.embeddings.create({ model: DEFAULT_EMBEDDING, input: question });
+    const questionEmbedding = questionEmbeddingResponse.data[0].embedding;
+    const snapshot = await db.collection('documents').where('chatId', '==', chatId).get();
+    const allDocuments = snapshot.docs.map(doc => doc.data());
+    const similarities = allDocuments.map(doc => ({ ...doc, similarity: cosineSimilarity(questionEmbedding, doc.embedding) }));
+    let relevantChunks = similarities.filter(doc => doc.similarity > 0.65).sort((a, b) => b.similarity - a.similarity).slice(0, 5);
+    let context = relevantChunks.length > 0 ? relevantChunks.map(doc => doc.chunk).join('\n\n') : "No relevant information found.";
+    const prompt = `Based on the following context, answer comprehensively.\n\nContext:\n${context}\n\nQuestion: ${question}\n\nAnswer:`;
+    const chatResponse = await openai.chat.completions.create({ model: selectedModel, messages: [{ role: 'user', content: prompt }], max_tokens: 500, temperature: 0.2 });
+    const answer = chatResponse.choices[0].message.content;
+    await incrementUsage(userId, 'queriesCount');
+    res.json({ answer, model: selectedModel, sources: relevantChunks.map(d => ({ chunk: d.chunk, source: d.source, similarity: d.similarity })) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================
+// WEBHOOK MANAGEMENT
+// ========================
+
+// POST - Register a webhook
+app.post('/api/webhooks', requireAuth, express.json(), async (req, res) => {
+  const userId = req.user.uid;
+  const { url, events } = req.body; // events: ['document.uploaded', 'query.completed']
+  const VALID_EVENTS = ['document.uploaded', 'query.completed'];
+  if (!url || !Array.isArray(events) || events.length === 0) {
+    return res.status(400).json({ error: 'url and events[] are required.' });
+  }
+  const validEvents = events.filter(e => VALID_EVENTS.includes(e));
+  if (validEvents.length === 0) return res.status(400).json({ error: `Invalid events. Allowed: ${VALID_EVENTS.join(', ')}` });
+  try {
+    // Allow parsing to catch malformed URLs
+    new URL(url);
+    const existing = await db.collection('webhooks').where('userId', '==', userId).get();
+    if (existing.size >= 10) return res.status(400).json({ error: 'Maximum 10 webhooks.' });
+    const secret = crypto.randomBytes(16).toString('hex');
+    const docRef = await db.collection('webhooks').add({
+      userId, url, events: validEvents, secret,
+      createdAt: new Date().toISOString()
+    });
+    res.json({ id: docRef.id, url, events: validEvents, secret });
+  } catch (error) {
+    if (error.code === 'ERR_INVALID_URL') return res.status(400).json({ error: 'Invalid webhook URL.' });
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET - List webhooks
+app.get('/api/webhooks', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  try {
+    const snapshot = await db.collection('webhooks').where('userId', '==', userId).get();
+    const webhooks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json({ webhooks });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE - Remove a webhook
+app.delete('/api/webhooks/:id', requireAuth, async (req, res) => {
+  const userId = req.user.uid;
+  const { id } = req.params;
+  try {
+    const docRef = db.collection('webhooks').doc(id);
+    const doc = await docRef.get();
+    if (!doc.exists || doc.data().userId !== userId) return res.status(404).json({ error: 'Webhook not found.' });
+    await docRef.delete();
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================
+// SUPPORTED MODELS LIST
+// ========================
+app.get('/api/models', requireAuth, (req, res) => {
+  res.json({
+    llmModels: Object.entries(SUPPORTED_MODELS).map(([id, m]) => ({ id, ...m })),
+    embeddingModels: Object.entries(SUPPORTED_EMBEDDING_MODELS).map(([id, m]) => ({ id, ...m })),
+    defaultLLM: DEFAULT_LLM,
+    defaultEmbedding: DEFAULT_EMBEDDING
+  });
 });
 
 // --- Start Server ---

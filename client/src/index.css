@@ -46,6 +46,32 @@ body {
   --sidebar-bg: #181818;
 }
 
+/* Light Theme */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f7f7f8;
+  --bg-tertiary: #ececec;
+  --bg-input: #f0f0f0;
+  --bg-hover: #e8e8e8;
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --text-tertiary: #999999;
+  --text-inverse: #ffffff;
+  --border-color: #d5d5d5;
+  --border-hover: #bbbbbb;
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --shadow-hover: rgba(0, 0, 0, 0.12);
+  --accent-primary: #10a37f;
+  --accent-hover: #0d8c6a;
+  --accent-link: #10a37f;
+  --chip-bg: #f0f0f0;
+  --chip-border: #d5d5d5;
+  --message-user-bg: #f7f7f8;
+  --message-ai-bg: #ffffff;
+  --source-bg: #f7f7f8;
+  --sidebar-bg: #f0f0f0;
+}
+
 code {
   font-family: 'JetBrains Mono', 'Fira Code', source-code-pro, Menlo, Monaco, Consolas, monospace;
 }

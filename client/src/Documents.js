@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 import { db } from './firebase';
-import { Search, FolderOpen, FileText, Trash2 } from 'lucide-react';
+import { Search, FolderOpen, FileText, Trash2, Tag, Plus, X } from 'lucide-react';
 import {
   collection,
   query,
@@ -15,11 +16,14 @@ import './Documents.css';
 
 function Documents() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [documents, setDocuments] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTag, setSelectedTag] = useState('');
   const [deletingId, setDeletingId] = useState(null);
   const [error, setError] = useState('');
+  const [tagInput, setTagInput] = useState({});
 
   useEffect(() => {
     if (!user) return;
@@ -39,9 +43,14 @@ function Documents() {
     return () => unsubscribe();
   }, [user]);
 
-  const filteredDocuments = documents.filter((doc) =>
-    (doc.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Get all unique tags across documents
+  const allTags = [...new Set(documents.flatMap(d => d.tags || []))].sort();
+
+  const filteredDocuments = documents.filter((doc) => {
+    const matchesSearch = (doc.title || 'Untitled').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTag = !selectedTag || (doc.tags || []).includes(selectedTag);
+    return matchesSearch && matchesTag;
+  });
 
   const formatDate = (date) => {
     if (!date) return '—';
@@ -75,6 +84,32 @@ function Documents() {
     }
   };
 
+  const handleAddTag = async (e, chatId) => {
+    e.stopPropagation();
+    const tag = (tagInput[chatId] || '').trim().toLowerCase();
+    if (!tag) return;
+    const doc = documents.find(d => d.id === chatId);
+    const currentTags = doc?.tags || [];
+    if (currentTags.includes(tag)) { setTagInput(prev => ({ ...prev, [chatId]: '' })); return; }
+    try {
+      await api.patch(`/api/chats/${chatId}/tags`, { tags: [...currentTags, tag] });
+      setTagInput(prev => ({ ...prev, [chatId]: '' }));
+    } catch {
+      toast('Failed to add tag', 'error');
+    }
+  };
+
+  const handleRemoveTag = async (e, chatId, tagToRemove) => {
+    e.stopPropagation();
+    const doc = documents.find(d => d.id === chatId);
+    const currentTags = (doc?.tags || []).filter(t => t !== tagToRemove);
+    try {
+      await api.patch(`/api/chats/${chatId}/tags`, { tags: currentTags });
+    } catch {
+      toast('Failed to remove tag', 'error');
+    }
+  };
+
   return (
     <div className="documents-page">
       <div className="documents-header">
@@ -92,6 +127,15 @@ function Documents() {
             className="search-input"
           />
         </div>
+        {allTags.length > 0 && (
+          <div className="tag-filter-bar">
+            <Tag size={14} />
+            <button className={`tag-filter-chip ${!selectedTag ? 'active' : ''}`} onClick={() => setSelectedTag('')}>All</button>
+            {allTags.map(tag => (
+              <button key={tag} className={`tag-filter-chip ${selectedTag === tag ? 'active' : ''}`} onClick={() => setSelectedTag(tag)}>{tag}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -137,6 +181,30 @@ function Documents() {
                 </div>
                 <div className="document-card-meta">
                   <span className="document-date">{formatDate(doc.createdAt)}</span>
+                  {(doc.tags || []).length > 0 && (
+                    <div className="document-tags">
+                      {doc.tags.map(tag => (
+                        <span key={tag} className="doc-tag">
+                          {tag}
+                          <button className="tag-remove-btn" onClick={(e) => handleRemoveTag(e, doc.id, tag)} title="Remove tag"><X size={10} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="add-tag-row" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      className="add-tag-input"
+                      placeholder="+ tag"
+                      value={tagInput[doc.id] || ''}
+                      onChange={(e) => setTagInput(prev => ({ ...prev, [doc.id]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleAddTag(e, doc.id); }}
+                      maxLength={20}
+                    />
+                    {tagInput[doc.id] && (
+                      <button className="add-tag-btn" onClick={(e) => handleAddTag(e, doc.id)}><Plus size={12} /></button>
+                    )}
+                  </div>
                 </div>
                 <div className="document-card-actions">
                   <button

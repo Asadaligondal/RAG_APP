@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './AuthContext';
+import { ThemeProvider } from './ThemeContext';
 import { CommandPaletteProvider } from './CommandPaletteContext';
 import { ToastProvider } from './ToastContext';
 import { ShortcutsHelpProvider } from './ShortcutsHelpContext';
@@ -18,6 +19,7 @@ import './Toast.css';
 
 function App() {
   return (
+    <ThemeProvider>
     <AuthProvider>
       <ToastProvider>
       <ShortcutsHelpProvider>
@@ -41,6 +43,7 @@ function App() {
       </ShortcutsHelpProvider>
       </ToastProvider>
     </AuthProvider>
+    </ThemeProvider>
   );
 }
 

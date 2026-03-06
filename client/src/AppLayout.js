@@ -1,7 +1,8 @@
 import React from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import AppSidebar from './AppSidebar';
+import { ChatProvider } from './ChatContext';
+import UnifiedSidebar from './UnifiedSidebar';
 import './AppLayout.css';
 
 function AppLayout() {
@@ -14,12 +15,14 @@ function AppLayout() {
   }
 
   return (
-    <div className="app-layout">
-      <AppSidebar />
-      <main className="app-main">
-        <Outlet />
-      </main>
-    </div>
+    <ChatProvider>
+      <div className="app-layout">
+        <UnifiedSidebar />
+        <main className="app-main">
+          <Outlet />
+        </main>
+      </div>
+    </ChatProvider>
   );
 }
 
